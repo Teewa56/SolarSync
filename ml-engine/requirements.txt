@@ -1,0 +1,20 @@
+# PyTorch and core ML libraries
+torch>=2.0.0            # Deep learning framework (PyTorch)
+numpy                   # Fundamental package for scientific computing
+pandas                  # Data structures and analysis tools
+scikit-learn            # Machine learning for data preprocessing and traditional algorithms
+matplotlib              # Plotting and visualization
+
+# API Server
+fastapi                 # Modern, fast web framework for building APIs
+uvicorn                 # ASGI server for running FastAPI (high-performance)
+python-multipart        # Required for handling form data in FastAPI
+pytest                  # Testing framework for Python
+anvil
+web3
+# Data Handling and Caching
+psycopg2-binary         # PostgreSQL database adapter
+redis                   # In-memory data structure store, used for real-time caching
+requests                # HTTP library for fetching external APIs (OpenWeatherMap)
+joblib                  # Efficiently saving and loading large Python objects (like the MinMaxScaler)
+python-dotenv           # For loading environment variables from .env files
