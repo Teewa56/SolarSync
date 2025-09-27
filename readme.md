@@ -33,6 +33,7 @@ SolarSync enables renewable energy producers (solar panel owners, wind farm oper
 - **LSTM/GRU Networks**: For energy generation forecasting
 - **Transformer Models**: Advanced sequence prediction for complex weather patterns
 - **Scikit-learn**: Data preprocessing and traditional ML algorithms
+- **ADK AGENTS**: AI agents workflow
 
 ### Data & APIs
 - **OpenWeatherMap API**: Real-time weather data
