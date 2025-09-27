@@ -9,7 +9,6 @@ SolarSync is a blockchain-based peer-to-peer energy trading platform that uses m
 SolarSync enables renewable energy producers (solar panel owners, wind farm operators) to trade excess energy directly with consumers through an intelligent mobile marketplace. Our ML models predict energy generation patterns using weather data, while smart contracts automate trading, pricing, and settlements.
 
 ### Key Features
-
 - **AI-Powered Forecasting**: Time series models predict solar/wind energy generation 24-48 hours ahead
 - **Automated Trading**: Smart contracts handle order matching, execution, and settlement
 - **Dynamic Pricing**: ML-driven pricing optimization based on supply/demand predictions
@@ -17,6 +16,7 @@ SolarSync enables renewable energy producers (solar panel owners, wind farm oper
 - **Reputation System**: Producer/consumer reliability scoring based on trading history
 - **Grid Balancing**: Incentivize energy storage and demand shifting for grid stability
 - **Mobile-First Design**: Native iOS/Android app with seamless wallet integration
+- **Agents**: This app will also make use of ADK agent framework to manager agent. 
 
 ## 🛠 Tech Stack
 
