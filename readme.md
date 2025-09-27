@@ -373,29 +373,6 @@ export NODE_ENV=production
 export NETWORK=mainnet
 export ML_API_URL=https://api.solarsync.io
 ```
-
-## 📊 Business Model
-
-- **Transaction Fees**: 0.5% fee on all energy trades
-- **Premium Features**: Advanced analytics and optimization tools
-- **Carbon Credit Marketplace**: Commission on carbon credit trades
-- **Enterprise Solutions**: Custom integrations for large energy producers
-
-## 🛡 Security Considerations
-
-- **Smart Contract Audits**: Professional security audits before mainnet deployment
-- **Oracle Security**: Multiple oracle sources to prevent manipulation
-- **Access Control**: Role-based permissions for critical functions
-- **Rate Limiting**: API endpoints protected against abuse
-- **Data Privacy**: Encrypted storage of sensitive user information
-
-## 🌱 Environmental Impact
-
-- **Carbon Footprint Tracking**: Real-time monitoring of environmental benefits
-- **Renewable Energy Incentives**: Preferential pricing for clean energy sources
-- **Grid Decarbonization**: Accelerate adoption of renewable energy
-- **Community Impact**: Local energy independence and resilience
-
 ## 🤝 Contributing
 
 We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
@@ -406,25 +383,5 @@ We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.
 3. Commit your changes (`git commit -m 'Add amazing feature'`)
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
-
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- OpenWeatherMap for weather data APIs
-- Chainlink for reliable oracle services
-- The Ethereum and PyTorch communities for excellent documentation
-- Renewable energy pioneers making clean energy accessible
-
-## 📞 Contact
-
-- **Email**: contact@solarsync.io
-- **Twitter**: [@SolarSyncIO](https://twitter.com/SolarSyncIO)
-- **Discord**: [SolarSync Community](https://discord.gg/solarsync)
-- **Website**: [solarsync.io](https://solarsync.io)
-
----
 
 **Built with ❤️ for a sustainable energy future**
