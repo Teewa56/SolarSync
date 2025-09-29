@@ -178,6 +178,78 @@ NOAA Data           Processing         LSTM/GRU       Endpoints
 6. **Settlement**: Automated payment and energy delivery confirmation
 7. **Reputation Update**: System updates participant reliability scores
 
+### For Producers (Solar/Wind Energy Generators)
+1. Predict Energy Output
+
+Uses AI models to forecast how much energy they'll generate in the next 24–48 hours.
+
+Helps producers plan when and how much energy to sell.
+
+2. List Energy for Sale
+
+Producers can post available energy units directly to the marketplace.
+
+Smart contracts automate pricing, escrow, and settlement.
+
+3. Optimize Pricing
+
+AI agents suggest dynamic pricing based on supply, demand, and forecast accuracy.
+
+4. Earn Carbon Credits
+
+Automatically receive carbon offset tokens for selling renewable energy.
+
+These credits can be stored, traded, or redeemed.
+
+5. Track Performance
+
+Producers build a reputation score based on delivery reliability and trade success.
+
+Higher scores unlock better visibility and trading opportunities.
+
+6. Manage Wallet & Transactions
+
+Integrated with WalletConnect for secure payments and contract execution.
+
+Producers can view earnings, trade history, and carbon credit balance
+
+### For Consumers (Energy Buyers)
+1. Discover Energy Offers
+
+Browse available energy units from nearby producers.
+
+Filter by price, source (solar/wind), and reliability score.
+
+2. Forecast Availability
+
+View AI-powered predictions of energy supply and pricing trends.
+
+Helps consumers plan purchases during peak generation times.
+
+3. Trade & Pay
+
+Select offers and execute trades via smart contracts.
+
+Payments are handled securely through their connected wallet.
+
+4. Track Carbon Impact
+
+Receive carbon credits for buying renewable energy.
+
+View environmental impact and share achievements.
+
+5. Get Smart Recommendations
+
+AI agents suggest optimal trade bundles based on budget, usage, and timing.
+
+Alerts for price drops, new listings, or grid incentives.
+
+6. Participate in Grid Programs
+
+Opt into grid balancing programs that reward off-peak usage or energy storage.
+
+Earn tokens for helping stabilize the grid.
+
 ## 📊 ML Models
 
 ### Energy Generation Forecasting
