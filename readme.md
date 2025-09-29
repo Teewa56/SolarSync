@@ -33,7 +33,17 @@ SolarSync enables renewable energy producers (solar panel owners, wind farm oper
 - **LSTM/GRU Networks**: For energy generation forecasting
 - **Transformer Models**: Advanced sequence prediction for complex weather patterns
 - **Scikit-learn**: Data preprocessing and traditional ML algorithms
-- **ADK AGENTS**: AI agents workflow
+
+### ADK Agents
+- **ADK-TS**: TypeScript-based agent framework for modular AI workflows AgentBuilder API: Fluent interface for composing agent logic, memory, tools, and streaming.
+- **Forecasting Agent**: Interfaces with ML models to predict solar/wind generation using weather data
+- **Trading Agent:** Automates smart contract interactions for order matching, execution, and settlement - - **Carbon Credit Agent:** Calculates and issues carbon credits based on renewable energy trades
+- **Reputation Agent**: Scores producers/consumers based on reliability and trading history
+- **Grid Balancing Agent**: Recommends storage or demand-shifting strategies for grid stability
+- **Mobile Assistant Agent**: Embedded in React Native app for conversational guidance and task execution
+- **Tool Integration**: Connects to Chainlink, WalletConnect, FastAPI, and PostgreSQL via agent tools
+- **Memory Services**: Supports persistent vector memory for user profiles, forecasts, and trade history
+- **Streaming Responses**: Enables real-time feedback and updates in mobile and web interfaces
 
 ### Data & APIs
 - **OpenWeatherMap API**: Real-time weather data
