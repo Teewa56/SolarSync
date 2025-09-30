@@ -33,7 +33,17 @@ SolarSync enables renewable energy producers (solar panel owners, wind farm oper
 - **LSTM/GRU Networks**: For energy generation forecasting
 - **Transformer Models**: Advanced sequence prediction for complex weather patterns
 - **Scikit-learn**: Data preprocessing and traditional ML algorithms
-- **ADK AGENTS**: AI agents workflow
+
+### ADK Agents
+- **ADK-TS**: TypeScript-based agent framework for modular AI workflows AgentBuilder API: Fluent interface for composing agent logic, memory, tools, and streaming.
+- **Forecasting Agent**: Interfaces with ML models to predict solar/wind generation using weather data
+- **Trading Agent:** Automates smart contract interactions for order matching, execution, and settlement - - **Carbon Credit Agent:** Calculates and issues carbon credits based on renewable energy trades
+- **Reputation Agent**: Scores producers/consumers based on reliability and trading history
+- **Grid Balancing Agent**: Recommends storage or demand-shifting strategies for grid stability
+- **Mobile Assistant Agent**: Embedded in React Native app for conversational guidance and task execution
+- **Tool Integration**: Connects to Chainlink, WalletConnect, FastAPI, and PostgreSQL via agent tools
+- **Memory Services**: Supports persistent vector memory for user profiles, forecasts, and trade history
+- **Streaming Responses**: Enables real-time feedback and updates in mobile and web interfaces
 
 ### Data & APIs
 - **OpenWeatherMap API**: Real-time weather data
@@ -196,6 +206,78 @@ NOAA Data           Processing         LSTM/GRU       Endpoints
 5. **Order Matching**: Trading engine matches buyers with sellers based on price/preferences
 6. **Settlement**: Automated payment and energy delivery confirmation
 7. **Reputation Update**: System updates participant reliability scores
+
+### For Producers (Solar/Wind Energy Generators)
+1. Predict Energy Output
+
+Uses AI models to forecast how much energy they'll generate in the next 24–48 hours.
+
+Helps producers plan when and how much energy to sell.
+
+2. List Energy for Sale
+
+Producers can post available energy units directly to the marketplace.
+
+Smart contracts automate pricing, escrow, and settlement.
+
+3. Optimize Pricing
+
+AI agents suggest dynamic pricing based on supply, demand, and forecast accuracy.
+
+4. Earn Carbon Credits
+
+Automatically receive carbon offset tokens for selling renewable energy.
+
+These credits can be stored, traded, or redeemed.
+
+5. Track Performance
+
+Producers build a reputation score based on delivery reliability and trade success.
+
+Higher scores unlock better visibility and trading opportunities.
+
+6. Manage Wallet & Transactions
+
+Integrated with WalletConnect for secure payments and contract execution.
+
+Producers can view earnings, trade history, and carbon credit balance
+
+### For Consumers (Energy Buyers)
+1. Discover Energy Offers
+
+Browse available energy units from nearby producers.
+
+Filter by price, source (solar/wind), and reliability score.
+
+2. Forecast Availability
+
+View AI-powered predictions of energy supply and pricing trends.
+
+Helps consumers plan purchases during peak generation times.
+
+3. Trade & Pay
+
+Select offers and execute trades via smart contracts.
+
+Payments are handled securely through their connected wallet.
+
+4. Track Carbon Impact
+
+Receive carbon credits for buying renewable energy.
+
+View environmental impact and share achievements.
+
+5. Get Smart Recommendations
+
+AI agents suggest optimal trade bundles based on budget, usage, and timing.
+
+Alerts for price drops, new listings, or grid incentives.
+
+6. Participate in Grid Programs
+
+Opt into grid balancing programs that reward off-peak usage or energy storage.
+
+Earn tokens for helping stabilize the grid.
 
 ## 📊 ML Models
 
