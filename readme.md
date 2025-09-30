@@ -71,6 +71,7 @@ SolarSync enables renewable energy producers (solar panel owners, wind farm oper
 - HEDERA testnet for testnet
 
 ### Project Structure
+```
 SolarSync/
 ├── contracts/                  # Solidity smart contracts
 │   ├── src/
@@ -98,6 +99,7 @@ SolarSync/
 │
 ├── mobile-app/                 # React Native mobile app
 └── README.md
+```
 
 ## 🚧 Installation
 
