@@ -16,14 +16,14 @@ SolarSync enables renewable energy producers (solar panel owners, wind farm oper
 - **Reputation System**: Producer/consumer reliability scoring based on trading history
 - **Grid Balancing**: Incentivize energy storage and demand shifting for grid stability
 - **Mobile-First Design**: Native iOS/Android app with seamless wallet integration
-- **Agents**: This app will also make use of ADK agent framework to manager agent. 
+- **Agents**: This app will also make use of ADK agent framework for manager agent. 
 
 ## 🛠 Tech Stack
 
 ### Blockchain Layer
 - **Solidity**: Smart contracts for trading logic, escrow, and settlements
 - **Foundry/Forge**: Smart contract development and deployment framework
-- **Ethereum/Polygon**: Blockchain network for contract deployment
+- **HEDERA**: Hedera DLT for the blockchain
 - **WalletConnect**: Mobile wallet integration
 - **Chainlink Oracles**: Weather data and price feeds integration
 
@@ -58,7 +58,36 @@ SolarSync enables renewable energy producers (solar panel owners, wind farm oper
 - Expo CLI (`npm install -g @expo/cli`)
 - Expo Go app (for mobile testing)
 - WalletConnect compatible mobile wallet
-- Ethereum testnet ETH (for development)
+- HEDERA testnet for testnet
+
+### Project Structure
+SolarSync/
+├── contracts/                  # Solidity smart contracts
+│   ├── src/
+│   │   ├── SolarSyncCore.sol
+│   │   ├── TradingEngine.sol
+│   │   ├── EnergyOracle.sol
+│   │   ├── CarbonCredits.sol
+│   │   ├── ReputationSystem.sol
+│   │   └── ISolarSyncInterfaces.sol
+│   ├── script/
+│   │   └── Deploy.s.sol
+│   ├── test/
+│   │   └── SolarSyncCore.t.sol
+│   └── foundry.toml
+│
+├── ml-engine/                  # Machine learning service
+│   ├── main.py                 # FastAPI server
+│   ├── models.py               # LSTM/GRU model definitions
+│   ├── data_loader.py          # Data preprocessing
+│   ├── data_fetcher.py         # Weather API integration
+│   ├── train_models.py         # Training pipeline
+│   ├── saved_models/           # Trained model files
+│   ├── data/                   # Training datasets
+│   └── requirements.txt
+│
+├── mobile-app/                 # React Native mobile app
+└── README.md
 
 ## 🚧 Installation
 
@@ -120,7 +149,7 @@ Create `.env` files in each directory:
 ```
 PRIVATE_KEY=your_private_key
 SEPOLIA_RPC_URL=https://sepolia.infura.io/v3/your_infura_key
-ETHERSCAN_API_KEY=your_etherscan_key
+//HEDERA SCAN KEY
 ```
 
 **ml-engine/.env**
@@ -142,7 +171,7 @@ EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID=your_walletconnect_project_id
 ### Smart Contract Architecture
 
 ```
-SolarSyncCore.sol          # Main trading logic
+├── SolarSyncCore.sol          # Main trading logic
 ├── EnergyOracle.sol       # Weather data and ML predictions
 ├── TradingEngine.sol      # Order matching and execution
 ├── ReputationSystem.sol   # Producer/consumer scoring

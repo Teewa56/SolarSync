@@ -15,5 +15,3 @@ interface ITradingEngine {
     function executeTradeSettlement(uint256 tradeId) external;
     function getBestMatch(uint256 amount, uint256 maxPrice, address buyer) external returns (uint256 listingId, uint256 matchedPrice);
 }
-
-// In a full implementation, interfaces for ReputationSystem and CarbonCredits would also be defined.

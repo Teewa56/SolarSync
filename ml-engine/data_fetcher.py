@@ -1,89 +1,268 @@
 import requests
-import pandas as pd
 import numpy as np
-from typing import List, Dict
+from typing import List, Dict, Optional
 import os
+from dotenv import load_dotenv
+import logging
+from datetime import datetime
 
-# Placeholder for feature names (must match the order used in model training)
-SOLAR_FEATURES_API = ['temp', 'humidity', 'cloud_cover', 'solar_irradiance'] 
-WIND_FEATURES_API = ['wind_speed', 'wind_direction', 'pressure'] # Note: 'energy_output' is the target, not an input feature here
+load_dotenv()
+logger = logging.getLogger(__name__)
 
-def get_realtime_weather_forecast(lat: float, lon: float) -> Dict:
+# Feature names (must match training)
+SOLAR_FEATURES = ['temp', 'humidity', 'cloud_cover', 'solar_irradiance']
+WIND_FEATURES = ['wind_speed', 'wind_direction', 'pressure']
+
+def get_realtime_weather_forecast(lat: float, lon: float) -> Optional[Dict]:
     """
-    Fetches the 48-hour hourly weather forecast from OpenWeatherMap.
+    Fetches 48-hour hourly weather forecast from OpenWeatherMap
     
     Args:
-        lat: Latitude of the producer.
-        lon: Longitude of the producer.
+        lat: Latitude of the location
+        lon: Longitude of the location
         
     Returns:
-        Dictionary containing hourly forecast data.
+        Dictionary containing hourly forecast data or None if failed
     """
     OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
+    
     if not OPENWEATHER_API_KEY:
-        print("Error: OPENWEATHER_API_KEY not set.")
-        return {}
+        logger.error("OPENWEATHER_API_KEY not set in environment")
+        return None
 
-    # Using the One Call API 3.0 for hourly forecast
-    # Exclude unnecessary blocks for efficiency
+    # OpenWeatherMap One Call API 3.0
     url = (
-        f"https://api.openweathermap.org/data/3.0/onecall?lat={lat}&lon={lon}"
+        f"https://api.openweathermap.org/data/3.0/onecall?"
+        f"lat={lat}&lon={lon}"
         f"&exclude=current,minutely,daily,alerts"
-        f"&appid={OPENWEATHER_API_KEY}&units=metric"
+        f"&appid={OPENWEATHER_API_KEY}"
+        f"&units=metric"
     )
     
     try:
-        response = requests.get(url)
+        response = requests.get(url, timeout=10)
         response.raise_for_status()
-        return response.json()
-    except requests.RequestException as e:
-        print(f"Weather API Error: {e}")
-        return {}
+        data = response.json()
+        
+        logger.info(f"Successfully fetched weather data for ({lat}, {lon})")
+        return data
+        
+    except requests.exceptions.Timeout:
+        logger.error("Weather API request timed out")
+        return None
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Weather API Error: {e}")
+        return None
+    except ValueError as e:
+        logger.error(f"Failed to parse weather API response: {e}")
+        return None
 
-def process_weather_data(raw_data: Dict, model_type: str, hours: int) -> List[np.ndarray]:
+
+def process_weather_data(
+    raw_data: Dict, 
+    model_type: str, 
+    hours: int
+) -> List[np.ndarray]:
     """
-    Extracts, normalizes, and sequences the necessary features from the raw forecast.
+    Extracts and processes weather features from raw forecast data
     
-    NOTE: This is the most complex step in the ML pipeline. It requires:
-    1. Historical context (last 24 hours) from the DB.
-    2. Merging historical and forecast data.
-    3. Applying the saved MinMaxScaler from training.
+    Args:
+        raw_data: Raw weather API response
+        model_type: 'solar' or 'wind'
+        hours: Number of hours to process
+        
+    Returns:
+        List of numpy arrays containing processed features
     """
     if not raw_data or 'hourly' not in raw_data:
+        logger.error("Invalid weather data format")
         return []
 
-    # Simplified extraction of the next N hours of forecast data
-    forecast_list = raw_data['hourly'][:hours]
+    try:
+        forecast_list = raw_data['hourly'][:hours]
+        processed_features = []
+        
+        if model_type == 'solar':
+            processed_features = _process_solar_features(forecast_list)
+        elif model_type == 'wind':
+            processed_features = _process_wind_features(forecast_list)
+        else:
+            logger.error(f"Unknown model type: {model_type}")
+            return []
+        
+        logger.info(f"Processed {len(processed_features)} hours of {model_type} features")
+        return processed_features
+        
+    except Exception as e:
+        logger.error(f"Error processing weather data: {e}")
+        return []
+
+
+def _process_solar_features(forecast_list: List[Dict]) -> List[np.ndarray]:
+    """
+    Extract solar-relevant features from weather forecast
     
-    # Placeholder for feature extraction (must align with model's expectations)
-    processed_features = []
+    Features:
+    - Temperature (°C)
+    - Humidity (%)
+    - Cloud cover (%)
+    - Solar irradiance (W/m²) - estimated from cloud cover
+    """
+    processed = []
     
-    if model_type == 'solar':
-        # Example: extract features relevant to solar prediction
-        for hour_data in forecast_list:
-            # Note: OpenWeatherMap does not provide direct solar irradiance, 
-            # so we estimate or use a proxy like cloudiness/UV.
-            irradiance_proxy = 1000 * (1 - hour_data.get('clouds', 0) / 100) # Simple proxy
+    for hour_data in forecast_list:
+        try:
+            temp = hour_data.get('temp', 20.0)
+            humidity = hour_data.get('humidity', 50.0)
+            clouds = hour_data.get('clouds', 0.0)
+            
+            # Estimate solar irradiance from cloud cover
+            # Clear sky: ~1000 W/m², fully cloudy: ~200 W/m²
+            base_irradiance = 1000.0
+            cloud_factor = 1.0 - (clouds / 100.0) * 0.8
+            irradiance = base_irradiance * cloud_factor
+            
+            # Additional factors
+            if 'dt' in hour_data:
+                hour_of_day = datetime.fromtimestamp(hour_data['dt']).hour
+                # Reduce irradiance at night (simple day/night cycle)
+                if hour_of_day < 6 or hour_of_day > 20:
+                    irradiance *= 0.1
+                elif hour_of_day < 9 or hour_of_day > 17:
+                    irradiance *= 0.6
+            
+            # UV index can also help refine irradiance if available
+            if 'uvi' in hour_data:
+                uvi = hour_data.get('uvi', 0)
+                irradiance = max(irradiance, uvi * 100)  # Rough correlation
             
             features_vector = [
-                hour_data.get('temp', 0),
-                hour_data.get('humidity', 0),
-                hour_data.get('clouds', 0),
-                irradiance_proxy
+                float(temp),
+                float(humidity),
+                float(clouds),
+                float(irradiance)
             ]
-            processed_features.append(features_vector)
             
-    # Convert to NumPy array
-    processed_array = np.array(processed_features)
+            processed.append(np.array([features_vector]))
+            
+        except Exception as e:
+            logger.warning(f"Error processing solar feature: {e}")
+            # Use default values if processing fails
+            processed.append(np.array([[20.0, 50.0, 50.0, 500.0]]))
     
-    # 
-    # !!! Critical Step: Normalization and Sequence Creation !!!
-    # 
-    # 1. Load the saved SCALER object (e.g., joblib.load('solar_scaler.pkl'))
-    # 2. Load the last SEQUENCE_LENGTH-1 of actual historical data from PostgreSQL/Redis.
-    # 3. Concatenate (Historical_Data, Forecast_Data)
-    # 4. Normalize the full dataset using the loaded scaler.
-    # 5. Create the sequence array for the prediction loop.
+    return processed
+
+
+def _process_wind_features(forecast_list: List[Dict]) -> List[np.ndarray]:
+    """
+    Extract wind-relevant features from weather forecast
     
-    # **Simplified Placeholder:** Just returning the raw (unnormalized) forecast data as the list of future features
-    return [np.array([features]) for features in processed_array]
+    Features:
+    - Wind speed (m/s)
+    - Wind direction (degrees)
+    - Pressure (hPa)
+    """
+    processed = []
+    
+    for hour_data in forecast_list:
+        try:
+            wind_speed = hour_data.get('wind_speed', 0.0)
+            wind_deg = hour_data.get('wind_deg', 0.0)
+            pressure = hour_data.get('pressure', 1013.0)
+            
+            # Wind gust can indicate higher energy potential
+            if 'wind_gust' in hour_data:
+                wind_gust = hour_data.get('wind_gust', wind_speed)
+                wind_speed = max(wind_speed, wind_gust * 0.8)
+            
+            features_vector = [
+                float(wind_speed),
+                float(wind_deg),
+                float(pressure)
+            ]
+            
+            processed.append(np.array([features_vector]))
+            
+        except Exception as e:
+            logger.warning(f"Error processing wind feature: {e}")
+            processed.append(np.array([[5.0, 180.0, 1013.0]]))
+    
+    return processed
+
+
+def normalize_features(
+    features: List[np.ndarray], 
+    scaler: object
+) -> List[np.ndarray]:
+    """
+    Normalize features using a fitted scaler
+    
+    Args:
+        features: List of feature arrays
+        scaler: Fitted MinMaxScaler or StandardScaler
+        
+    Returns:
+        List of normalized feature arrays
+    """
+    try:
+        # Stack all features
+        stacked = np.vstack([f[0] for f in features])
+        
+        # Normalize
+        normalized = scaler.transform(stacked)
+        
+        # Reshape back to list format
+        return [np.array([normalized[i]]) for i in range(len(normalized))]
+        
+    except Exception as e:
+        logger.error(f"Error normalizing features: {e}")
+        return features
+
+
+def get_historical_context(
+    location_id: str, 
+    sequence_length: int = 24
+) -> Optional[np.ndarray]:
+    """
+    Fetch historical data from database/cache for context
+    
+    In production, this would query Redis or PostgreSQL for the last
+    N hours of actual weather and generation data
+    
+    Args:
+        location_id: Identifier for the location
+        sequence_length: Number of historical hours needed
+        
+    Returns:
+        Array of historical features or None
+    """
+    # TODO: Implement Redis/PostgreSQL lookup
+    # For now, return None to indicate no historical data available
+    
+    logger.warning("Historical context not implemented - using mock data")
+    return None
+
+
+def validate_weather_data(data: Dict) -> bool:
+    """
+    Validate weather API response structure
+    
+    Args:
+        data: Weather API response
+        
+    Returns:
+        True if valid, False otherwise
+    """
+    required_fields = ['hourly']
+    
+    if not all(field in data for field in required_fields):
+        return False
+    
+    if not isinstance(data['hourly'], list) or len(data['hourly']) == 0:
+        return False
+    
+    # Check first hourly entry has required fields
+    first_hour = data['hourly'][0]
+    required_hour_fields = ['temp', 'humidity', 'clouds']
+    
+    return all(field in first_hour for field in required_hour_fields)

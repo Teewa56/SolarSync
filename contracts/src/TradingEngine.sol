@@ -1,21 +1,26 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/security/Pausable.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+
 /**
  * @title TradingEngine
- * @dev Handles order matching, escrow, and automated settlement between producers and consumers.
+ * @dev Handles order matching, escrow, and automated settlement between producers and consumers
  */
-contract TradingEngine {
-    
-    // --- STRUCTS ---
+contract TradingEngine is ReentrancyGuard, Pausable, Ownable {
     
     struct BuyOrder {
         uint256 id;
         address consumer;
         uint256 amountKWh;
         uint256 maxPricePerKWhWei;
-        uint256 escrowedFunds; // Funds locked by the consumer
+        uint256 escrowedFunds;
+        uint256 createdAt;
         bool isActive;
+        bool isPartiallyFilled;
+        uint256 filledAmount;
     }
     
     struct SellOrder {
@@ -24,7 +29,10 @@ contract TradingEngine {
         uint256 amountKWh;
         uint256 pricePerKWhWei;
         uint256 deliveryTimestamp;
+        uint256 createdAt;
         bool isActive;
+        bool isPartiallyFilled;
+        uint256 filledAmount;
     }
     
     struct Trade {
@@ -34,218 +42,533 @@ contract TradingEngine {
         uint256 matchedAmountKWh;
         uint256 finalPricePerKWhWei;
         uint256 escrowedAmount;
+        uint256 executedAt;
         bool isSettled;
+        bool isCompleted;
+        uint256 actualDelivered;
+        uint256 settledAt;
     }
 
-    // --- STATE VARIABLES ---
-
-    // Note: In a production system, these might use more complex data structures (e.g., priority queue)
-    // for efficient matching, but simple mappings suffice for demonstration.
     mapping(uint256 => BuyOrder) public buyOrders;
     mapping(uint256 => SellOrder) public sellOrders;
     mapping(uint256 => Trade) public trades;
+    uint256[] public activeBuyOrders;
+    uint256[] public activeSellOrders;
+    mapping(address => uint256[]) public userBuyOrders;
+    mapping(address => uint256[]) public userSellOrders;
+    mapping(address => uint256[]) public userTrades;
 
     uint256 private nextBuyOrderId = 1;
     uint256 private nextSellOrderId = 1;
     uint256 private nextTradeId = 1;
 
-    address public solarSyncCoreAddress; // Address of the main contract
-
-    // --- CONSTRUCTOR ---
-
-    constructor(address _coreAddress) {
-        solarSyncCoreAddress = _coreAddress;
-    }
+    address public solarSyncCoreAddress;
+    address public reputationSystemAddress;
+    address public carbonCreditsAddress;
     
-    // --- MODIFIERS ---
+    uint256 public platformFeePercentage = 50; // 0.5% (50 basis points)
+    uint256 public constant MAX_PLATFORM_FEE = 500; // Maximum 5%
+    address public feeRecipient;
     
-    // Ensure only the SolarSyncCore contract can call critical functions
+    uint256 public constant MIN_TRADE_AMOUNT = 1; // 1 KWh
+    uint256 public constant MAX_TRADE_AMOUNT = 1000000; // 1 GWh
+    uint256 public constant SETTLEMENT_WINDOW = 48 hours; // Time to confirm delivery
+
+    event BuyOrderPlaced(
+        uint256 indexed orderId,
+        address indexed consumer,
+        uint256 amountKWh,
+        uint256 maxPrice,
+        uint256 escrowAmount
+    );
+    
+    event SellOrderPlaced(
+        uint256 indexed orderId,
+        address indexed producer,
+        uint256 amountKWh,
+        uint256 price,
+        uint256 deliveryTime
+    );
+    
+    event TradeExecuted(
+        uint256 indexed tradeId,
+        uint256 indexed buyOrderId,
+        uint256 indexed sellOrderId,
+        uint256 amountKWh,
+        uint256 price,
+        address buyer,
+        address seller
+    );
+    
+    event TradeSettled(
+        uint256 indexed tradeId,
+        uint256 actualDelivered,
+        uint256 paymentAmount,
+        uint256 refundAmount
+    );
+    
+    event OrderCancelled(
+        uint256 indexed orderId,
+        address indexed user,
+        bool isBuyOrder,
+        string reason
+    );
+
+    event FundsWithdrawn(
+        address indexed user,
+        uint256 amount,
+        string reason
+    );
+    
     modifier onlyCoreContract() {
-        require(msg.sender == solarSyncCoreAddress, "Only SolarSync Core can call this.");
+        require(msg.sender == solarSyncCoreAddress, "Only SolarSync Core can call this");
         _;
     }
 
-    // --- ORDER PLACEMENT (Called by SolarSyncCore on behalf of participants) ---
+    modifier validBuyOrder(uint256 orderId) {
+        require(orderId > 0 && orderId < nextBuyOrderId, "Invalid buy order ID");
+        _;
+    }
+
+    modifier validSellOrder(uint256 orderId) {
+        require(orderId > 0 && orderId < nextSellOrderId, "Invalid sell order ID");
+        _;
+    }
+
+    modifier validTrade(uint256 tradeId) {
+        require(tradeId > 0 && tradeId < nextTradeId, "Invalid trade ID");
+        _;
+    }
+
+    constructor(address _coreAddress) Ownable(msg.sender) {
+        require(_coreAddress != address(0), "Core address cannot be zero");
+        solarSyncCoreAddress = _coreAddress;
+        feeRecipient = msg.sender;
+    }
+
+    function setContractAddresses(
+        address _reputationSystem,
+        address _carbonCredits
+    ) external onlyOwner {
+        reputationSystemAddress = _reputationSystem;
+        carbonCreditsAddress = _carbonCredits;
+    }
+
+    function setCoreContractAddress(address _coreAddress) external onlyOwner {
+        require(_coreAddress != address(0), "Core address cannot be zero");
+        solarSyncCoreAddress = _coreAddress;
+    }
+
+    function setPlatformFee(uint256 _feePercentage) external onlyOwner {
+        require(_feePercentage <= MAX_PLATFORM_FEE, "Fee too high");
+        platformFeePercentage = _feePercentage;
+    }
+
+    function setFeeRecipient(address _feeRecipient) external onlyOwner {
+        require(_feeRecipient != address(0), "Fee recipient cannot be zero");
+        feeRecipient = _feeRecipient;
+    }
 
     /**
-     * @notice Places a consumer buy order and escrows funds.
-     * @dev This is called by SolarSyncCore.
+     * @notice Places a consumer buy order and escrows funds
+     * @param consumer The address of the consumer
+     * @param amountKWh Amount of energy to buy
+     * @param maxPricePerKWhWei Maximum price willing to pay
+     * @return buyId The ID of the created buy order
      */
     function placeBuyOrder(
         address consumer, 
         uint256 amountKWh, 
         uint256 maxPricePerKWhWei
-    ) external payable onlyCoreContract returns (uint256 buyId) {
-        uint256 orderId = nextBuyOrderId++;
+    ) external payable onlyCoreContract whenNotPaused nonReentrant returns (uint256 buyId) {
+        require(amountKWh >= MIN_TRADE_AMOUNT && amountKWh <= MAX_TRADE_AMOUNT, "Invalid amount");
+        require(maxPricePerKWhWei > 0, "Price must be positive");
+        
         uint256 requiredDeposit = amountKWh * maxPricePerKWhWei;
+        require(msg.value >= requiredDeposit, "Insufficient escrow");
         
-        require(msg.value >= requiredDeposit, "Insufficient escrow deposit.");
+        buyId = nextBuyOrderId++;
         
-        buyOrders[orderId] = BuyOrder({
-            id: orderId,
+        buyOrders[buyId] = BuyOrder({
+            id: buyId,
             consumer: consumer,
             amountKWh: amountKWh,
             maxPricePerKWhWei: maxPricePerKWhWei,
-            escrowedFunds: msg.value, // Escrow the full amount
-            isActive: true
+            escrowedFunds: msg.value,
+            createdAt: block.timestamp,
+            isActive: true,
+            isPartiallyFilled: false,
+            filledAmount: 0
         });
         
-        return orderId;
+        activeBuyOrders.push(buyId);
+        userBuyOrders[consumer].push(buyId);
+        
+        emit BuyOrderPlaced(buyId, consumer, amountKWh, maxPricePerKWhWei, msg.value);
+        _matchOrders();
+        
+        return buyId;
     }
     
     /**
-     * @notice Places a producer sell order.
-     * @dev This is called by SolarSyncCore.
+     * @notice Places a producer sell order
+     * @param producer The address of the producer
+     * @param amountKWh Amount of energy to sell
+     * @param pricePerKWhWei Price per KWh
+     * @param deliveryTimestamp When energy will be delivered
+     * @return sellId The ID of the created sell order
      */
     function placeSellOrder(
         address producer, 
         uint256 amountKWh, 
         uint256 pricePerKWhWei, 
         uint256 deliveryTimestamp
-    ) external onlyCoreContract returns (uint256 sellId) {
-        uint256 orderId = nextSellOrderId++;
+    ) external onlyCoreContract whenNotPaused returns (uint256 sellId) {
+        require(amountKWh >= MIN_TRADE_AMOUNT && amountKWh <= MAX_TRADE_AMOUNT, "Invalid amount");
+        require(pricePerKWhWei > 0, "Price must be positive");
+        require(deliveryTimestamp > block.timestamp, "Invalid delivery time");
         
-        sellOrders[orderId] = SellOrder({
-            id: orderId,
+        sellId = nextSellOrderId++;
+        
+        sellOrders[sellId] = SellOrder({
+            id: sellId,
             producer: producer,
             amountKWh: amountKWh,
             pricePerKWhWei: pricePerKWhWei,
             deliveryTimestamp: deliveryTimestamp,
-            isActive: true
+            createdAt: block.timestamp,
+            isActive: true,
+            isPartiallyFilled: false,
+            filledAmount: 0
         });
         
-        return orderId;
+        activeSellOrders.push(sellId);
+        userSellOrders[producer].push(sellId);
+        
+        emit SellOrderPlaced(sellId, producer, amountKWh, pricePerKWhWei, deliveryTimestamp);
+        
+        // Attempt immediate matching
+        _matchOrders();
+        
+        return sellId;
     }
 
-    // --- ORDER MATCHING ---
+    /**
+     * @notice Internal function to match buy and sell orders
+     */
+    function _matchOrders() internal {
+        // Simple matching algorithm: match highest buy price with lowest sell price
+        for (uint256 i = 0; i < activeBuyOrders.length; i++) {
+            uint256 buyId = activeBuyOrders[i];
+            BuyOrder storage buyOrder = buyOrders[buyId];
+            
+            if (!buyOrder.isActive) continue;
+            
+            for (uint256 j = 0; j < activeSellOrders.length; j++) {
+                uint256 sellId = activeSellOrders[j];
+                SellOrder storage sellOrder = sellOrders[sellId];
+                
+                if (!sellOrder.isActive) continue;
+                
+                // Check if orders can match
+                if (buyOrder.maxPricePerKWhWei >= sellOrder.pricePerKWhWei) {
+                    uint256 matchAmount = _min(
+                        buyOrder.amountKWh - buyOrder.filledAmount,
+                        sellOrder.amountKWh - sellOrder.filledAmount
+                    );
+                    
+                    if (matchAmount > 0) {
+                        _executeTrade(buyId, sellId, matchAmount, sellOrder.pricePerKWhWei);
+                    }
+                }
+            }
+        }
+        _cleanupInactiveOrders();
+    }
 
     /**
-     * @notice Finds the best match for a buy order from available sell orders.
-     * @dev This is a simplified matching algorithm (First-In, First-Out, Best Price).
-     * @param amount The requested energy amount.
-     * @param maxPrice The maximum price buyer is willing to pay.
-     * @param buyer The address of the buyer.
-     * @return matchedSellOrderId The ID of the best matched sell order.
-     * @return matchedPrice The final matched price per KWh.
+     * @notice Execute a matched trade
+     */
+    function _executeTrade(
+        uint256 buyId, 
+        uint256 sellId, 
+        uint256 matchedAmount,
+        uint256 finalPrice
+    ) internal {
+        BuyOrder storage buyOrder = buyOrders[buyId];
+        SellOrder storage sellOrder = sellOrders[sellId];
+        
+        uint256 tradeId = nextTradeId++;
+        uint256 totalCost = matchedAmount * finalPrice;
+        
+        buyOrder.filledAmount += matchedAmount;
+        sellOrder.filledAmount += matchedAmount;
+        
+        if (buyOrder.filledAmount >= buyOrder.amountKWh) {
+            buyOrder.isActive = false;
+        } else {
+            buyOrder.isPartiallyFilled = true;
+        }
+        
+        if (sellOrder.filledAmount >= sellOrder.amountKWh) {
+            sellOrder.isActive = false;
+        } else {
+            sellOrder.isPartiallyFilled = true;
+        }
+        
+        trades[tradeId] = Trade({
+            id: tradeId,
+            buyOrderId: buyId,
+            sellOrderId: sellId,
+            matchedAmountKWh: matchedAmount,
+            finalPricePerKWhWei: finalPrice,
+            escrowedAmount: totalCost,
+            executedAt: block.timestamp,
+            isSettled: false,
+            isCompleted: false,
+            actualDelivered: 0,
+            settledAt: 0
+        });
+        
+        userTrades[buyOrder.consumer].push(tradeId);
+        userTrades[sellOrder.producer].push(tradeId);
+        
+        uint256 excessFunds = buyOrder.escrowedFunds - totalCost;
+        if (excessFunds > 0 && buyOrder.filledAmount >= buyOrder.amountKWh) {
+            buyOrder.escrowedFunds = totalCost;
+            (bool success, ) = buyOrder.consumer.call{value: excessFunds}("");
+            require(success, "Refund failed");
+        }
+        
+        emit TradeExecuted(
+            tradeId,
+            buyId,
+            sellId,
+            matchedAmount,
+            finalPrice,
+            buyOrder.consumer,
+            sellOrder.producer
+        );
+    }
+
+    /**
+     * @notice Clean up inactive orders from active arrays
+     */
+    function _cleanupInactiveOrders() internal {
+        for (uint256 i = activeBuyOrders.length; i > 0; i--) {
+            if (!buyOrders[activeBuyOrders[i - 1]].isActive) {
+                activeBuyOrders[i - 1] = activeBuyOrders[activeBuyOrders.length - 1];
+                activeBuyOrders.pop();
+            }
+        }
+        
+        for (uint256 i = activeSellOrders.length; i > 0; i--) {
+            if (!sellOrders[activeSellOrders[i - 1]].isActive) {
+                activeSellOrders[i - 1] = activeSellOrders[activeSellOrders.length - 1];
+                activeSellOrders.pop();
+            }
+        }
+    }
+
+    /**
+     * @notice Settles a trade after delivery confirmation
+     * @param tradeId The ID of the trade to settle
+     */
+    function executeTradeSettlement(uint256 tradeId) 
+        external 
+        validTrade(tradeId) 
+        nonReentrant 
+    {
+        Trade storage trade = trades[tradeId];
+        require(!trade.isSettled, "Trade already settled");
+        require(msg.sender == solarSyncCoreAddress, "Only Core can settle");
+        
+        BuyOrder storage buyOrder = buyOrders[trade.buyOrderId];
+        SellOrder storage sellOrder = sellOrders[trade.sellOrderId];
+        
+        uint256 actualDelivered = trade.matchedAmountKWh;
+        uint256 paymentAmount = actualDelivered * trade.finalPricePerKWhWei;
+
+        uint256 fee = (paymentAmount * platformFeePercentage) / 10000;
+        uint256 producerPayment = paymentAmount - fee;
+        
+        uint256 refundAmount = 0;
+        if (actualDelivered < trade.matchedAmountKWh) {
+            refundAmount = trade.escrowedAmount - paymentAmount;
+            (bool refundSuccess, ) = buyOrder.consumer.call{value: refundAmount}("");
+            require(refundSuccess, "Consumer refund failed");
+        }
+        
+        (bool paymentSuccess, ) = sellOrder.producer.call{value: producerPayment}("");
+        require(paymentSuccess, "Producer payment failed");
+        
+        if (fee > 0) {
+            (bool feeSuccess, ) = feeRecipient.call{value: fee}("");
+            require(feeSuccess, "Fee transfer failed");
+        }
+        
+        // Update trade status
+        trade.isSettled = true;
+        trade.isCompleted = true;
+        trade.actualDelivered = actualDelivered;
+        trade.settledAt = block.timestamp;
+        
+        emit TradeSettled(tradeId, actualDelivered, paymentAmount, refundAmount);
+    }
+
+    /**
+     * @notice Cancel an active buy order
+     */
+    function cancelBuyOrder(uint256 orderId, string memory reason) 
+        external 
+        validBuyOrder(orderId) 
+        nonReentrant 
+    {
+        BuyOrder storage order = buyOrders[orderId];
+        require(order.consumer == msg.sender, "Not order owner");
+        require(order.isActive, "Order not active");
+        
+        order.isActive = false;
+        
+        // Refund escrowed funds
+        if (order.escrowedFunds > 0) {
+            uint256 refundAmount = order.escrowedFunds;
+            order.escrowedFunds = 0;
+            
+            (bool success, ) = order.consumer.call{value: refundAmount}("");
+            require(success, "Refund failed");
+        }
+        
+        emit OrderCancelled(orderId, msg.sender, true, reason);
+    }
+
+    /**
+     * @notice Cancel an active sell order
+     */
+    function cancelSellOrder(uint256 orderId, string memory reason) 
+        external 
+        validSellOrder(orderId) 
+    {
+        SellOrder storage order = sellOrders[orderId];
+        require(order.producer == msg.sender, "Not order owner");
+        require(order.isActive, "Order not active");
+        
+        order.isActive = false;
+        
+        emit OrderCancelled(orderId, msg.sender, false, reason);
+    }
+
+    /**
+     * @notice Get best match for a buy order
      */
     function getBestMatch(
         uint256 amount, 
         uint256 maxPrice, 
-        address buyer // Buyer is passed to ensure matching integrity
+        address buyer
     ) external view returns (uint256 matchedSellOrderId, uint256 matchedPrice) {
-        
         uint256 bestId = 0;
-        uint256 lowestPrice = type(uint256).max; // Initialize with max possible value
+        uint256 lowestPrice = type(uint256).max;
 
-        // Iterate through all active sell orders (inefficient but simple)
-        for (uint256 i = 1; i < nextSellOrderId; i++) {
-            SellOrder storage sellOrder = sellOrders[i];
+        for (uint256 i = 0; i < activeSellOrders.length; i++) {
+            uint256 sellId = activeSellOrders[i];
+            SellOrder storage sellOrder = sellOrders[sellId];
 
             if (sellOrder.isActive && 
-                sellOrder.amountKWh >= amount &&
+                (sellOrder.amountKWh - sellOrder.filledAmount) >= amount &&
                 sellOrder.pricePerKWhWei <= maxPrice &&
                 sellOrder.pricePerKWhWei < lowestPrice) 
             {
-                // Found a better match
                 lowestPrice = sellOrder.pricePerKWhWei;
-                bestId = i;
+                bestId = sellId;
             }
         }
         
         return (bestId, lowestPrice);
     }
-    
-    // --- TRADE EXECUTION AND SETTLEMENT ---
 
     /**
-     * @notice Executes a matched trade and creates a Trade record.
-     * @dev Called by the Core contract after a match is found. This is where escrow funds are linked to the trade.
+     * @notice Get all active buy orders
      */
-    function executeTrade(
-        uint256 buyId, 
-        uint256 sellId, 
-        uint256 matchedAmountKWh,
-        uint256 finalPricePerKWhWei
-    ) external onlyCoreContract returns (uint256 tradeId) {
-        
-        BuyOrder storage buyOrder = buyOrders[buyId];
-        SellOrder storage sellOrder = sellOrders[sellId];
-        
-        require(buyOrder.isActive && sellOrder.isActive, "Order not active.");
-        require(matchedAmountKWh > 0, "Matched amount must be positive.");
-
-        // Calculate actual cost
-        uint256 actualCost = matchedAmountKWh * finalPricePerKWhWei;
-        require(buyOrder.escrowedFunds >= actualCost, "Escrow funds too low for trade.");
-
-        // Adjust remaining amounts for partial fills (if necessary)
-        buyOrder.amountKWh -= matchedAmountKWh;
-        sellOrder.amountKWh -= matchedAmountKWh;
-
-        // Deactivate orders if fully filled
-        if (buyOrder.amountKWh == 0) buyOrder.isActive = false;
-        if (sellOrder.amountKWh == 0) sellOrder.isActive = false;
-
-        uint256 currentTradeId = nextTradeId++;
-        trades[currentTradeId] = Trade({
-            id: currentTradeId,
-            buyOrderId: buyId,
-            sellOrderId: sellId,
-            matchedAmountKWh: matchedAmountKWh,
-            finalPricePerKWhWei: finalPricePerKWhWei,
-            escrowedAmount: actualCost, // Lock only the required funds for the trade
-            isSettled: false
-        });
-
-        // Refund any excess funds from the consumer's initial deposit
-        uint256 excessFunds = buyOrder.escrowedFunds - actualCost;
-        if (excessFunds > 0) {
-            // Note: This should ideally be handled carefully with re-entrancy protection
-            (bool success, ) = buyOrder.consumer.call{value: excessFunds}("");
-            require(success, "Refund failed.");
-            buyOrder.escrowedFunds = actualCost;
-        }
-
-        return currentTradeId;
+    function getActiveBuyOrders() external view returns (uint256[] memory) {
+        return activeBuyOrders;
     }
 
     /**
-     * @notice Finalizes the trade by transferring funds to the producer after generation confirmation.
-     * @dev Called by the Core contract upon successful generation confirmation.
-     * @param tradeId The ID of the trade to settle.
-     * @param actualAmountKWh The final confirmed amount (used for pro-rata settlement).
+     * @notice Get all active sell orders
      */
-    function executeTradeSettlement(uint256 tradeId, uint256 actualAmountKWh) external onlyCoreContract {
-        Trade storage trade = trades[tradeId];
-        require(!trade.isSettled, "Trade already settled.");
-
-        // --- Settlement Logic ---
-        uint256 amountToSettle = trade.matchedAmountKWh;
-        uint256 paymentAmount = trade.escrowedAmount;
-
-        // If actual generation is less than promised (pro-rata settlement)
-        if (actualAmountKWh < trade.matchedAmountKWh) {
-            // Recalculate payment based on actual delivered amount
-            amountToSettle = actualAmountKWh;
-            paymentAmount = amountToSettle * trade.finalPricePerKWhWei;
-            
-            // Refund the consumer for the undelivered portion
-            uint256 refundAmount = trade.escrowedAmount - paymentAmount;
-            BuyOrder storage buyOrder = buyOrders[trade.buyOrderId];
-            (bool refundSuccess, ) = buyOrder.consumer.call{value: refundAmount}("");
-            require(refundSuccess, "Final refund failed.");
-        }
-        
-        // --- Platform Fee (e.g., 0.5%) ---
-        uint256 fee = paymentAmount / 200; // 1/200 = 0.005 = 0.5%
-        uint256 producerPayment = paymentAmount - fee;
-        
-        // Transfer the net amount to the producer
-        SellOrder storage sellOrder = sellOrders[trade.sellOrderId];
-        (bool paymentSuccess, ) = sellOrder.producer.call{value: producerPayment}("");
-        require(paymentSuccess, "Producer payment failed.");
-
-        trade.isSettled = true;
-        // In a full implementation, the fee would be sent to a treasury contract.
+    function getActiveSellOrders() external view returns (uint256[] memory) {
+        return activeSellOrders;
     }
+
+    /**
+     * @notice Get user's buy orders
+     */
+    function getUserBuyOrders(address user) external view returns (uint256[] memory) {
+        return userBuyOrders[user];
+    }
+
+    /**
+     * @notice Get user's sell orders
+     */
+    function getUserSellOrders(address user) external view returns (uint256[] memory) {
+        return userSellOrders[user];
+    }
+
+    /**
+     * @notice Get user's trades
+     */
+    function getUserTrades(address user) external view returns (uint256[] memory) {
+        return userTrades[user];
+    }
+
+    /**
+     * @notice Get trade details
+     */
+    function getTrade(uint256 tradeId) external view validTrade(tradeId) returns (Trade memory) {
+        return trades[tradeId];
+    }
+
+    /**
+     * @notice Get order book statistics
+     */
+    function getOrderBookStats() external view returns (
+        uint256 totalBuyOrders,
+        uint256 totalSellOrders,
+        uint256 activeBuyOrdersCount,
+        uint256 activeSellOrdersCount,
+        uint256 totalTrades
+    ) {
+        totalBuyOrders = nextBuyOrderId - 1;
+        totalSellOrders = nextSellOrderId - 1;
+        activeBuyOrdersCount = activeBuyOrders.length;
+        activeSellOrdersCount = activeSellOrders.length;
+        totalTrades = nextTradeId - 1;
+    }
+
+    function _min(uint256 a, uint256 b) internal pure returns (uint256) {
+        return a < b ? a : b;
+    }
+
+    function matchOrders() external onlyCoreContract {
+        _matchOrders();
+    }
+
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+
+    /**
+     * @notice Emergency withdrawal for stuck funds (only owner)
+     */
+    function emergencyWithdraw(address payable recipient, uint256 amount) external onlyOwner {
+        require(recipient != address(0), "Invalid recipient");
+        (bool success) = recipient.call{value: amount}("");
+        require(success, "Withdrawal failed");
+    }
+
+    receive() external payable {}
 }

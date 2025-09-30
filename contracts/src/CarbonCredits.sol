@@ -10,33 +10,18 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  * This contract is controlled by the SolarSyncCore for minting.
  */
 contract CarbonCredits is ERC20, Ownable {
-
     // The SolarSyncCore contract address, which is authorized to mint credits
     address public solarSyncCoreAddress;
-
     // Defines the conversion rate: 1 MWh of clean energy = 1 Carbon Credit (a common standard)
-    // We'll use 1000 KWh (1 MWh) as the base.
     uint256 private constant KWH_PER_CREDIT = 1000;
-
-    // --- CONSTRUCTOR ---
-    
-    constructor(address _coreAddress) 
-        ERC20("SolarSync Carbon Credit", "SSCC") 
-        Ownable(msg.sender) // Owner is initially the deployer
-    {
-        // Set the address of the core contract
+    constructor(address _coreAddress)ERC20("SolarSync Carbon Credit", "SSCC")Ownable(msg.sender){
         solarSyncCoreAddress = _coreAddress;
     }
-
-    // --- MODIFIER ---
-
     // Restrict minting ability to only the SolarSyncCore contract
     modifier onlyCoreContract() {
         require(msg.sender == solarSyncCoreAddress, "Caller must be SolarSync Core.");
         _;
     }
-    
-    // --- MINTING LOGIC ---
 
     /**
      * @notice Calculates and mints Carbon Credits to a recipient based on delivered renewable energy.
@@ -45,30 +30,21 @@ contract CarbonCredits is ERC20, Ownable {
      * @param energyAmountKWh The final, verified amount of renewable energy delivered (in KWh).
      * @return creditsMinted The total number of SSCC tokens minted.
      */
-    function calculateAndMintCredits(
-        address recipient, 
-        uint256 energyAmountKWh
-    ) external onlyCoreContract returns (uint256 creditsMinted) {
-        
-        // Calculate the number of full MWh delivered (1 MWh = 1000 KWh)
-        // Integer division automatically handles the conversion to full credits.
+
+    function calculateAndMintCredits(address recipient, uint256 energyAmountKWh) external onlyCoreContract returns (uint256 creditsMinted) {
         creditsMinted = energyAmountKWh / KWH_PER_CREDIT;
-        
         if (creditsMinted > 0) {
-            // Mint the new SSCC tokens to the recipient
-            _mint(recipient, creditsMinted * 10**decimals()); // Mint in terms of smallest unit (wei)
+            _mint(recipient, creditsMinted * 10**decimals());
         }
-        
         return creditsMinted;
     }
 
-    // --- ADMINISTRATION ---
-    
     /**
      * @notice Allows the owner to update the address of the SolarSyncCore contract.
      * @dev Necessary if the Core contract is upgraded.
      * @param newCoreAddress The address of the new core contract.
      */
+
     function setCoreContractAddress(address newCoreAddress) external onlyOwner {
         require(newCoreAddress != address(0), "New address cannot be zero.");
         solarSyncCoreAddress = newCoreAddress;
