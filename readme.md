@@ -9,6 +9,7 @@ SolarSync is a blockchain-based peer-to-peer energy trading platform that uses m
 SolarSync enables renewable energy producers (solar panel owners, wind farm operators) to trade excess energy directly with consumers through an intelligent mobile marketplace. Our ML models predict energy generation patterns using weather data, while smart contracts automate trading, pricing, and settlements.
 
 ### Key Features
+
 - **AI-Powered Forecasting**: Time series models predict solar/wind energy generation 24-48 hours ahead
 - **Automated Trading**: Smart contracts handle order matching, execution, and settlement
 - **Dynamic Pricing**: ML-driven pricing optimization based on supply/demand predictions
@@ -24,6 +25,7 @@ SolarSync enables renewable energy producers (solar panel owners, wind farm oper
 - **Solidity**: Smart contracts for trading logic, escrow, and settlements
 - **Foundry/Forge**: Smart contract development and deployment framework
 - **HEDERA**: Hedera DLT for the blockchain
+- **Base**: Base blockchain
 - **WalletConnect**: Mobile wallet integration
 - **Chainlink Oracles**: Weather data and price feeds integration
 
@@ -68,7 +70,7 @@ SolarSync enables renewable energy producers (solar panel owners, wind farm oper
 - Expo CLI (`npm install -g @expo/cli`)
 - Expo Go app (for mobile testing)
 - WalletConnect compatible mobile wallet
-- HEDERA testnet for testnet
+- HEDERA testnet tokens and base sepolia test tokens
 
 ### Project Structure
 ```
@@ -200,7 +202,7 @@ NOAA Data           Processing         LSTM/GRU       Endpoints
 ```
 
 ### System Workflow
-
+- Agents to handle the workflow
 1. **Data Collection**: Weather APIs provide real-time meteorological data
 2. **ML Prediction**: PyTorch models forecast energy generation for registered producers
 3. **Oracle Updates**: Chainlink oracles feed predictions to smart contracts
@@ -411,6 +413,22 @@ GET /api/v1/carbon-credits/calculate?energy_amount={kwh}
 - Real-time price charts and market depth
 - Community trading activity and leaderboards
 
+### For Energy Producers:
+Download SolarSync Mobile App
+
+Connect your wallet (MetaMask, HashPack)
+
+Register your solar/wind installation
+
+Start trading in 60 seconds!
+
+### For Energy Consumers:
+Download the app
+
+Browse local renewable energy offers
+
+Make your first green energy purchase
+
 ## 🧪 Testing
 
 ### Smart Contract Tests
@@ -427,13 +445,6 @@ forge test --match-contract SolarSyncCoreTest
 
 # Run with coverage
 forge coverage
-```
-
-### ML Model Tests
-```bash
-cd ml-engine
-pytest tests/test_models.py -v
-python tests/test_prediction_accuracy.py
 ```
 
 ### Mobile App Tests

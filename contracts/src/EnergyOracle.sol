@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import "@chainlink/contracts/src/v0.8/ChainlinkClient.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@chainlink/contracts/src/v0.8/interfaces/LinkTokenInterface.sol";
 
 /**
  * @title EnergyOracle

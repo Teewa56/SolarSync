@@ -303,8 +303,37 @@ class TransformerForecastModel(nn.Module):
         self.dropout = nn.Dropout(dropout)
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-    
-        #Forward pass
+        """
+        Forward pass
         
         Args:
             x: Input tensor (batch_size, sequence_length, input_size)
+            
+        Returns:
+            Output tensor (batch_size, output_size)
+        """
+        # Project input to d_model dimensions
+        # Shape: (batch_size, sequence_length, d_model)
+        x = self.input_projection(x)
+        
+        # Add positional encoding
+        # Shape: (batch_size, sequence_length, d_model)
+        x = self.positional_encoding(x)
+        
+        # Transformer encoding
+        # Shape: (batch_size, sequence_length, d_model)
+        transformer_out = self.transformer_encoder(x)
+        
+        # Take the output from the last time step for prediction
+        # Shape: (batch_size, d_model)
+        last_output = transformer_out[:, -1, :]
+        
+        # Output layers
+        # Shape: (batch_size, d_model // 2)
+        out = F.relu(self.fc1(last_output))
+        # Shape: (batch_size, d_model // 2)
+        out = self.dropout(out)
+        # Shape: (batch_size, output_size)
+        out = self.fc2(out)
+        
+        return out
