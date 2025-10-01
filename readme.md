@@ -17,15 +17,15 @@ SolarSync enables renewable energy producers (solar panel owners, wind farm oper
 - **Reputation System**: Producer/consumer reliability scoring based on trading history
 - **Grid Balancing**: Incentivize energy storage and demand shifting for grid stability
 - **Mobile-First Design**: Native iOS/Android app with seamless wallet integration
-- **Agents**: This app will also make use of ADK agent framework for manager agent. 
+- **Agents**: This app will also make use of ADK agent framework to manage user workflows. 
 
 ## 🛠 Tech Stack
 
 ### Blockchain Layer
 - **Solidity**: Smart contracts for trading logic, escrow, and settlements
 - **Foundry/Forge**: Smart contract development and deployment framework
-- **HEDERA**: Hedera DLT for the blockchain
-- **Base**: Base blockchain
+- **HEDERA**: Hedera DLT
+- **Base**: Base, Ethereum L2 blockchain
 - **WalletConnect**: Mobile wallet integration
 - **Chainlink Oracles**: Weather data and price feeds integration
 
