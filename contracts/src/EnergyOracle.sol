@@ -14,9 +14,9 @@ contract EnergyOracle is ChainlinkClient, Ownable {
     mapping(address => uint256) private s_producerPredictions;
     mapping(bytes32 => address) private s_requestIdToProducer;
 
-    address private constant LINK_TOKEN = 0x0; // Sepolia LINK- change this to hedera
-    address private constant ORACLE_ADDRESS = "0x..."; // Replace with actual Chainlink Oracle address
-    bytes32 private constant JOB_ID = "JOB_ID"; // Replace with actual job ID for /predict/solar
+    address private constant LINK_TOKEN = process.env.LINK_TOKEN; 
+    address private constant ORACLE_ADDRESS = process.env.ORACLE_ADDRESS; 
+    bytes32 private constant JOB_ID = process.env.JOB_ID; 
 
     event ChainlinkRequested(bytes32 indexed requestId);
     event PredictionFulfilled(address indexed producer, uint256 predictedAmountKWh);

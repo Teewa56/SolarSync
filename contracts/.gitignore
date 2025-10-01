@@ -1,7 +1,8 @@
 # Compiler files
 cache/
 out/
-
+.env
+echo ".env" >> .gitignore
 # Ignores development broadcast logs
 !/broadcast
 /broadcast/*/31337/

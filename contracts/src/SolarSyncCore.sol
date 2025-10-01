@@ -12,9 +12,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  * Handles logic for producers listing energy and consumers creating buy orders.
  */
 contract SolarSyncCore is ReentrancyGuard, Pausable, Ownable {
-    // --- STATE VARIABLES ---
 
-    // Structs to hold participant data
     struct Producer {
         uint256 id;
         uint256 capacityKWh;
@@ -260,6 +258,8 @@ contract SolarSyncCore is ReentrancyGuard, Pausable, Ownable {
         listing.actualDelivered = actualAmountKWh;
         listing.isConfirmed = true;
         producers[msg.sender].totalEnergyDelivered += actualAmountKWh;
+        //it is called without properly checking if the listing was sold
+        //because if it was not sold, the trading engine will simply do nothing
         
         // If there was a trade, trigger settlement through trading engine
         if (listing.isSold) {
