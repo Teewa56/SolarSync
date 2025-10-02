@@ -3,7 +3,7 @@
 **Decentralized Energy Trading Platform with AI-Powered Renewable Energy Forecasting**
 
 SolarSync is a blockchain-based peer-to-peer energy trading platform that uses machine learning to predict renewable energy generation and optimize decentralized energy markets. Built with PyTorch for ML forecasting and Solidity for smart contract automation.
-
+Built for HEDERA and Base Blockchain
 ## 🚀 Overview
 
 SolarSync enables renewable energy producers (solar panel owners, wind farm operators) to trade excess energy directly with consumers through an intelligent mobile marketplace. Our ML models predict energy generation patterns using weather data, while smart contracts automate trading, pricing, and settlements.
