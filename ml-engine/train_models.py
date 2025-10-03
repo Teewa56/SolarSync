@@ -52,6 +52,12 @@ class ModelTrainer:
         logger.info(f"Loading data from {self.config['data_path']}...")
         raw_data = pd.read_csv(self.config['data_path'])
         logger.info(f"Loaded {len(raw_data)} rows")
+
+        if 'timestamp' in raw_data.columns:
+            raw_data['timestamp'] = pd.to_datetime(raw_data['timestamp'], errors='coerce')
+            # Drop rows with NaT if necessary (or handle them in the validator)
+            raw_data.dropna(subset=['timestamp'], inplace=True)
+            logger.info("Successfully converted 'timestamp' column to datetime.")
         
         # 2. Validate and clean data
         logger.info("Validating data quality...")
@@ -421,7 +427,7 @@ def main():
     solar_config = {
         'model_type': 'solar',
         'architecture': 'lstm',
-        'data_path': 'data/solar/solar_history.csv',
+        'data_path': 'data/solar/weather_solar_data/nasa_solar_data.csv',
         'target_col': 'energy_output',
         'seq_length': 24,
         'hidden_size': 128,
@@ -438,7 +444,7 @@ def main():
     wind_config = {
         'model_type': 'wind',
         'architecture': 'gru',
-        'data_path': 'data/wind/wind_history.csv',
+        'data_path': 'data/wind/weather_wind_data/openmeteo_historical.csv',
         'target_col': 'energy_output',
         'seq_length': 18,
         'hidden_size': 128,
