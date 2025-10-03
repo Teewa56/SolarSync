@@ -16,7 +16,7 @@ contract EnergyOracle is ChainlinkClient, Ownable {
 
     address private constant LINK_TOKEN = 0x779877A7B0D9E8603169DdbD7836e478b4624789; //Base Sepolia testnet link token
     // address private constant LINK_TOKEN = 0x90a386d59b9A6a4795a011e8f032Fc21ED6FEFb6 -This is for hedera testnet
-    address private constant ORACLE_ADDRESS = 0x792cc283e77f1b088869cfeb879256c00b1e1736;
+    address private constant ORACLE_ADDRESS = 0x5fd83192365fc7a6a4971a280a2a493cd6bb160f;
     bytes32 private constant JOB_ID = process.env.JOB_ID;
 
     event ChainlinkRequested(bytes32 indexed requestId);
