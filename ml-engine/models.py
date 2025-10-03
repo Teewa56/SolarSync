@@ -41,7 +41,7 @@ class LSTMForecastModel(nn.Module):
         # Dropout layer
         self.dropout = nn.Dropout(dropout)
         
-        # Fully connected layers with residual connection
+        # Fully connected layers
         self.fc1 = nn.Linear(hidden_size, hidden_size // 2)
         self.fc2 = nn.Linear(hidden_size // 2, output_size)
         
@@ -66,68 +66,14 @@ class LSTMForecastModel(nn.Module):
         Returns:
             Output tensor (batch_size, output_size)
         """
-        # Project input to d_model dimensions
-        x = self.input_projection(x)
-        
-        # Add positional encoding
-        x = self.positional_encoding(x)
-        
-        # Transformer encoding
-        transformer_out = self.transformer_encoder(x)
-        
-        # Take the last timestep output
-        last_output = transformer_out[:, -1, :]
-        
-        # Output layers
-        out = F.relu(self.fc1(last_output))
-        out = self.dropout(out)
-        out = self.fc2(out)
-        
-        return out
-
-
-class PositionalEncoding(nn.Module):
-    """
-    Positional encoding for transformer models
-    """
-    def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):
-        super().__init__()
-        self.dropout = nn.Dropout(p=dropout)
-        
-        # Create positional encoding matrix
-        position = torch.arange(max_len).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2) * (-torch.log(torch.tensor(10000.0)) / d_model))
-        
-        pe = torch.zeros(max_len, 1, d_model)
-        pe[:, 0, 0::2] = torch.sin(position * div_term)
-        pe[:, 0, 1::2] = torch.cos(position * div_term)
-        
-        self.register_buffer('pe', pe)
-        
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Add positional encoding to input
-        
-        Args:
-            x: Input tensor (batch_size, sequence_length, d_model)
-            
-        Returns:
-            Tensor with positional encoding added
-        """
-        x = x + self.pe[:x.size(1)].transpose(0, 1)
-        return self.dropout(x)
-            
-        Returns:
-            Output tensor (batch_size, output_size)
-        
         # LSTM forward pass
         lstm_out, (hidden, cell) = self.lstm(x)
         
         # Take the output from the last time step
         last_output = lstm_out[:, -1, :]
         
-        # Apply batch normalization
-        if last_output.size(0) > 1:  # Only if batch size > 1
+        # Apply batch normalization (only if batch size > 1)
+        if last_output.size(0) > 1:
             last_output = self.batch_norm(last_output)
         
         # Apply dropout
@@ -153,14 +99,6 @@ class GRUForecastModel(nn.Module):
         output_size: int,
         dropout: float = 0.2
     ):
-        """
-        Args:
-            input_size: Number of features in input sequence
-            hidden_size: Number of features in hidden state (128)
-            num_layers: Number of recurrent layers (2)
-            output_size: Number of values to predict (1)
-            dropout: Dropout probability
-        """
         super().__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
@@ -213,7 +151,7 @@ class GRUForecastModel(nn.Module):
         # Apply attention to all timesteps
         attention_out = self.attention(gru_out)
         
-        # Batch normalization
+        # Batch normalization (only if batch size > 1)
         if attention_out.size(0) > 1:
             attention_out = self.batch_norm(attention_out)
         
@@ -239,33 +177,55 @@ class AttentionLayer(nn.Module):
     def forward(self, gru_output: torch.Tensor) -> torch.Tensor:
         """
         Apply attention to GRU outputs
-        """
+        
         Args:
             gru_output: Tensor (batch_size, sequence_length, hidden_size)
             
         Returns:
             Weighted output (batch_size, hidden_size)
-        
+        """
         # Calculate attention scores
-        # Shape: (batch_size, sequence_length, 1)
         attention_scores = self.attention_weights(gru_output)
         
         # Apply softmax to get attention weights
-        # Shape: (batch_size, sequence_length, 1)
         attention_weights = F.softmax(attention_scores, dim=1)
         
         # Apply attention weights to GRU outputs
-        # Shape: (batch_size, hidden_size)
         weighted_output = torch.sum(gru_output * attention_weights, dim=1)
         
         return weighted_output
 
 
-class TransformerForecastModel(nn.Module):
+class PositionalEncoding(nn.Module):
+    """
+    Positional encoding for transformer models
+    """
+    def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):
+        super().__init__()
+        self.dropout = nn.Dropout(p=dropout)
+        
+        # Create positional encoding matrix
+        position = torch.arange(max_len).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2) * (-torch.log(torch.tensor(10000.0)) / d_model))
+        
+        pe = torch.zeros(max_len, 1, d_model)
+        pe[:, 0, 0::2] = torch.sin(position * div_term)
+        pe[:, 0, 1::2] = torch.cos(position * div_term)
+        
+        self.register_buffer('pe', pe)
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Add positional encoding to input
+        """
+        x = x + self.pe[:x.size(1)].transpose(0, 1)
+        return self.dropout(x)
 
+
+class TransformerForecastModel(nn.Module):
+    """
     Transformer-based model for advanced time series forecasting
-    (Optional - for future enhancement)
-    
+    """
     def __init__(
         self,
         input_size: int,
@@ -305,35 +265,22 @@ class TransformerForecastModel(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass
-        
-        Args:
-            x: Input tensor (batch_size, sequence_length, input_size)
-            
-        Returns:
-            Output tensor (batch_size, output_size)
         """
         # Project input to d_model dimensions
-        # Shape: (batch_size, sequence_length, d_model)
         x = self.input_projection(x)
         
         # Add positional encoding
-        # Shape: (batch_size, sequence_length, d_model)
         x = self.positional_encoding(x)
         
         # Transformer encoding
-        # Shape: (batch_size, sequence_length, d_model)
         transformer_out = self.transformer_encoder(x)
         
-        # Take the output from the last time step for prediction
-        # Shape: (batch_size, d_model)
+        # Take the last timestep output
         last_output = transformer_out[:, -1, :]
         
         # Output layers
-        # Shape: (batch_size, d_model // 2)
         out = F.relu(self.fc1(last_output))
-        # Shape: (batch_size, d_model // 2)
         out = self.dropout(out)
-        # Shape: (batch_size, output_size)
         out = self.fc2(out)
         
         return out

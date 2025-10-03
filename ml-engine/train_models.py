@@ -1,306 +1,477 @@
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, TensorDataset, random_split
+from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
 import os
-import sys
 import joblib
-import argparse
-from pathlib import Path
 import logging
 from datetime import datetime
-
-# Setup paths
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from pathlib import Path
+import json
+from typing import Dict, Tuple, Optional
+import optuna  # For hyperparameter optimization
 
 from models import LSTMForecastModel, GRUForecastModel
 from data_loader import load_and_preprocess_data, create_sequences
+from data_validator import DataValidator
+from feature_engineering import FeatureEngineer
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# --- Configuration ---
-class ModelConfig:
-    """Configuration for model training"""
-    def __init__(self, model_type: str):
-        self.model_type = model_type
-        
-        if model_type == 'solar':
-            self.seq_length = 24
-            self.hidden_size = 128
-            self.num_layers = 3
-            self.features = ['solar_irradiance', 'temperature', 'cloud_cover', 'energy_output']
-            self.data_path = 'data/solar/solar_history.csv'
-            self.epochs = 100
-            self.learning_rate = 0.001
-            self.batch_size = 64
-            self.architecture = 'lstm'
-            
-        elif model_type == 'wind':
-            self.seq_length = 18
-            self.hidden_size = 128
-            self.num_layers = 2
-            self.features = ['wind_speed', 'wind_direction', 'pressure', 'energy_output']
-            self.data_path = 'data/wind/wind_history.csv'
-            self.epochs = 80
-            self.learning_rate = 0.002
-            self.batch_size = 64
-            self.architecture = 'gru'
-        
-        self.output_size = 1
-        self.dropout = 0.2
-        self.weight_decay = 1e-5
-        self.early_stopping_patience = 15
-        self.save_dir = 'saved_models'
 
-
-def train_model(config: ModelConfig):
-    """
-    Main training function for solar/wind models
+class ModelTrainer:
+    """Enhanced model training with experiment tracking and versioning"""
     
-    Args:
-        config: ModelConfig object with training parameters
-    """
-    logger.info(f"\n{'='*60}")
-    logger.info(f"Starting {config.model_type.upper()} Model Training")
-    logger.info(f"{'='*60}\n")
+    def __init__(self, config: dict):
+        self.config = config
+        self.model_type = config['model_type']
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        
+        # Experiment tracking
+        self.experiment_id = datetime.now().strftime('%Y%m%d_%H%M%S')
+        self.experiment_dir = Path(f"experiments/{self.model_type}/{self.experiment_id}")
+        self.experiment_dir.mkdir(parents=True, exist_ok=True)
+        
+        logger.info(f"Initialized trainer for {self.model_type}")
+        logger.info(f"Using device: {self.device}")
+        logger.info(f"Experiment directory: {self.experiment_dir}")
     
-    # Create save directory
-    os.makedirs(config.save_dir, exist_ok=True)
-    
-    # 1. Load and preprocess data
-    logger.info("Loading and preprocessing data...")
-    scaled_data, scaler = load_and_preprocess_data(config.data_path, config.features)
-    
-    if scaled_data.size == 0:
-        logger.error(f"No data loaded from {config.data_path}")
-        logger.info("Please ensure the data file exists and contains the required columns")
-        return None
-    
-    logger.info(f"Data shape: {scaled_data.shape}")
-    
-    # 2. Create sequences
-    logger.info(f"Creating sequences (length: {config.seq_length})...")
-    X, Y = create_sequences(scaled_data, config.seq_length)
-    
-    logger.info(f"Sequences created: X={X.shape}, Y={Y.shape}")
-    
-    # 3. Convert to PyTorch tensors
-    X_tensor = torch.from_numpy(X).float()
-    Y_tensor = torch.from_numpy(Y).float().unsqueeze(1)
-    
-    # 4. Split data (80% train, 10% validation, 10% test)
-    dataset = TensorDataset(X_tensor, Y_tensor)
-    train_size = int(0.8 * len(dataset))
-    val_size = int(0.1 * len(dataset))
-    test_size = len(dataset) - train_size - val_size
-    
-    train_dataset, val_dataset, test_dataset = random_split(
-        dataset, 
-        [train_size, val_size, test_size],
-        generator=torch.Generator().manual_seed(42)
-    )
-    
-    train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=config.batch_size, shuffle=False)
-    test_loader = DataLoader(test_dataset, batch_size=config.batch_size, shuffle=False)
-    
-    logger.info(f"Data split: Train={len(train_dataset)}, Val={len(val_dataset)}, Test={len(test_dataset)}")
-    
-    # 5. Initialize model
-    input_size = X.shape[2]
-    
-    if config.architecture == 'lstm':
-        model = LSTMForecastModel(
-            input_size=input_size,
-            hidden_size=config.hidden_size,
-            num_layers=config.num_layers,
-            output_size=config.output_size,
-            dropout=config.dropout
+    def prepare_data(self) -> Tuple[DataLoader, DataLoader, DataLoader, object]:
+        """
+        Comprehensive data preparation pipeline
+        
+        Returns:
+            train_loader, val_loader, test_loader, scaler
+        """
+        logger.info("="*60)
+        logger.info("STEP 1: DATA PREPARATION")
+        logger.info("="*60)
+        
+        # 1. Load raw data
+        logger.info(f"Loading data from {self.config['data_path']}...")
+        raw_data = pd.read_csv(self.config['data_path'])
+        logger.info(f"Loaded {len(raw_data)} rows")
+        
+        # 2. Validate and clean data
+        logger.info("Validating data quality...")
+        validator = DataValidator(self.model_type)
+        clean_data, validation_report = validator.validate_dataframe(raw_data)
+        
+        # Save validation report
+        with open(self.experiment_dir / 'validation_report.json', 'w') as f:
+            json.dump(validation_report, f, indent=2)
+        
+        logger.info(f"Data quality score: {validation_report['data_quality_score']:.2%}")
+        
+        # 3. Feature engineering
+        logger.info("Engineering features...")
+        engineer = FeatureEngineer(self.model_type)
+        enriched_data = engineer.engineer_all_features(
+            clean_data, 
+            target_col=self.config['target_col']
         )
-    else:  # GRU
-        model = GRUForecastModel(
-            input_size=input_size,
-            hidden_size=config.hidden_size,
-            num_layers=config.num_layers,
-            output_size=config.output_size,
-            dropout=config.dropout
+        
+        logger.info(f"Features created: {enriched_data.shape[1]} columns")
+        
+        # Save feature list
+        feature_list = enriched_data.columns.tolist()
+        with open(self.experiment_dir / 'features.json', 'w') as f:
+            json.dump(feature_list, f, indent=2)
+        
+        # 4. Select features for training
+        # Use all numeric columns except timestamp and target
+        feature_cols = [col for col in enriched_data.columns 
+                       if col not in ['timestamp', self.config['target_col']]
+                       and enriched_data[col].dtype in [np.float32, np.float64, np.int32, np.int64]]
+        
+        # Add target column at the end
+        feature_cols.append(self.config['target_col'])
+        
+        logger.info(f"Training features: {len(feature_cols)-1}, Target: {self.config['target_col']}")
+        
+        # 5. Scale data
+        from sklearn.preprocessing import MinMaxScaler
+        scaler = MinMaxScaler(feature_range=(0, 1))
+        
+        data_array = enriched_data[feature_cols].values.astype(np.float32)
+        scaled_data = scaler.fit_transform(data_array)
+        
+        logger.info(f"Data scaled to range [0, 1]")
+        
+        # 6. Create sequences
+        logger.info(f"Creating sequences (length: {self.config['seq_length']})...")
+        X, Y = create_sequences(scaled_data, self.config['seq_length'])
+        
+        logger.info(f"Sequences: X={X.shape}, Y={Y.shape}")
+        
+        # 7. Convert to tensors
+        X_tensor = torch.from_numpy(X).float()
+        Y_tensor = torch.from_numpy(Y).float().unsqueeze(1)
+        
+        # 8. Split data
+        dataset = TensorDataset(X_tensor, Y_tensor)
+        
+        train_size = int(0.7 * len(dataset))
+        val_size = int(0.15 * len(dataset))
+        test_size = len(dataset) - train_size - val_size
+        
+        from torch.utils.data import random_split
+        train_dataset, val_dataset, test_dataset = random_split(
+            dataset, 
+            [train_size, val_size, test_size],
+            generator=torch.Generator().manual_seed(42)
         )
+        
+        # 9. Create data loaders
+        train_loader = DataLoader(
+            train_dataset, 
+            batch_size=self.config['batch_size'], 
+            shuffle=True,
+            num_workers=2,
+            pin_memory=True if torch.cuda.is_available() else False
+        )
+        val_loader = DataLoader(
+            val_dataset, 
+            batch_size=self.config['batch_size'], 
+            shuffle=False,
+            num_workers=2,
+            pin_memory=True if torch.cuda.is_available() else False
+        )
+        test_loader = DataLoader(
+            test_dataset, 
+            batch_size=self.config['batch_size'], 
+            shuffle=False,
+            num_workers=2,
+            pin_memory=True if torch.cuda.is_available() else False
+        )
+        
+        logger.info(f"Data split: Train={len(train_dataset)}, Val={len(val_dataset)}, Test={len(test_dataset)}")
+        
+        return train_loader, val_loader, test_loader, scaler, len(feature_cols)-1
     
-    logger.info(f"Model architecture: {config.architecture.upper()}")
-    logger.info(f"Total parameters: {sum(p.numel() for p in model.parameters()):,}")
+    def build_model(self, input_size: int) -> nn.Module:
+        """Build model based on configuration"""
+        if self.config['architecture'] == 'lstm':
+            model = LSTMForecastModel(
+                input_size=input_size,
+                hidden_size=self.config['hidden_size'],
+                num_layers=self.config['num_layers'],
+                output_size=1,
+                dropout=self.config['dropout']
+            )
+        elif self.config['architecture'] == 'gru':
+            model = GRUForecastModel(
+                input_size=input_size,
+                hidden_size=self.config['hidden_size'],
+                num_layers=self.config['num_layers'],
+                output_size=1,
+                dropout=self.config['dropout']
+            )
+        else:
+            raise ValueError(f"Unknown architecture: {self.config['architecture']}")
+        
+        model = model.to(self.device)
+        
+        total_params = sum(p.numel() for p in model.parameters())
+        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        
+        logger.info(f"Model: {self.config['architecture'].upper()}")
+        logger.info(f"Total parameters: {total_params:,}")
+        logger.info(f"Trainable parameters: {trainable_params:,}")
+        
+        return model
     
-    # 6. Define loss and optimizer
-    criterion = nn.MSELoss()
-    optimizer = torch.optim.Adam(
-        model.parameters(), 
-        lr=config.learning_rate,
-        weight_decay=config.weight_decay
-    )
-    
-    # Learning rate scheduler
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, 
-        mode='min', 
-        factor=0.5, 
-        patience=5, 
-        verbose=True
-    )
-    
-    # 7. Training loop
-    best_val_loss = float('inf')
-    patience_counter = 0
-    train_losses = []
-    val_losses = []
-    
-    logger.info(f"\nStarting training for {config.epochs} epochs...")
-    logger.info(f"{'='*60}\n")
-    
-    for epoch in range(config.epochs):
-        # Training phase
+    def train_epoch(self, model, train_loader, criterion, optimizer) -> float:
+        """Train for one epoch"""
         model.train()
-        train_loss = 0.0
+        total_loss = 0.0
         
         for batch_X, batch_Y in train_loader:
+            batch_X = batch_X.to(self.device)
+            batch_Y = batch_Y.to(self.device)
+            
             optimizer.zero_grad()
             outputs = model(batch_X)
             loss = criterion(outputs, batch_Y)
             loss.backward()
             
-            # Gradient clipping to prevent exploding gradients
+            # Gradient clipping
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             
             optimizer.step()
-            train_loss += loss.item()
+            total_loss += loss.item()
         
-        avg_train_loss = train_loss / len(train_loader)
-        train_losses.append(avg_train_loss)
-        
-        # Validation phase
+        return total_loss / len(train_loader)
+    
+    def validate_epoch(self, model, val_loader, criterion) -> float:
+        """Validate for one epoch"""
         model.eval()
-        val_loss = 0.0
+        total_loss = 0.0
         
         with torch.no_grad():
             for batch_X, batch_Y in val_loader:
+                batch_X = batch_X.to(self.device)
+                batch_Y = batch_Y.to(self.device)
+                
                 outputs = model(batch_X)
                 loss = criterion(outputs, batch_Y)
-                val_loss += loss.item()
+                total_loss += loss.item()
         
-        avg_val_loss = val_loss / len(val_loader)
-        val_losses.append(avg_val_loss)
+        return total_loss / len(val_loader)
+    
+    def train(self, train_loader, val_loader, input_size) -> Tuple[nn.Module, Dict]:
+        """
+        Full training loop with early stopping and checkpointing
+        """
+        logger.info("="*60)
+        logger.info("STEP 2: MODEL TRAINING")
+        logger.info("="*60)
         
-        # Learning rate scheduling
-        scheduler.step(avg_val_loss)
+        # Build model
+        model = self.build_model(input_size)
         
-        # Logging
-        if (epoch + 1) % 10 == 0 or epoch == 0:
-            logger.info(
-                f"Epoch [{epoch+1}/{config.epochs}] "
-                f"Train Loss: {avg_train_loss:.6f} | "
-                f"Val Loss: {avg_val_loss:.6f}"
-            )
+        # Loss and optimizer
+        criterion = nn.MSELoss()
+        optimizer = torch.optim.Adam(
+            model.parameters(),
+            lr=self.config['learning_rate'],
+            weight_decay=self.config.get('weight_decay', 1e-5)
+        )
         
-        # Early stopping
-        if avg_val_loss < best_val_loss:
-            best_val_loss = avg_val_loss
-            patience_counter = 0
+        # Learning rate scheduler
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            mode='min',
+            factor=0.5,
+            patience=5,
+            verbose=True
+        )
+        
+        # Training history
+        history = {
+            'train_loss': [],
+            'val_loss': [],
+            'learning_rates': []
+        }
+        
+        best_val_loss = float('inf')
+        patience_counter = 0
+        best_epoch = 0
+        
+        logger.info(f"Training for {self.config['epochs']} epochs...")
+        logger.info("="*60)
+        
+        for epoch in range(self.config['epochs']):
+            # Train
+            train_loss = self.train_epoch(model, train_loader, criterion, optimizer)
+            
+            # Validate
+            val_loss = self.validate_epoch(model, val_loader, criterion)
+            
+            # Update scheduler
+            scheduler.step(val_loss)
+            
+            # Record history
+            history['train_loss'].append(train_loss)
+            history['val_loss'].append(val_loss)
+            history['learning_rates'].append(optimizer.param_groups[0]['lr'])
+            
+            # Logging
+            if (epoch + 1) % 10 == 0 or epoch == 0:
+                logger.info(
+                    f"Epoch [{epoch+1:3d}/{self.config['epochs']}] "
+                    f"Train Loss: {train_loss:.6f} | Val Loss: {val_loss:.6f} | "
+                    f"LR: {optimizer.param_groups[0]['lr']:.2e}"
+                )
             
             # Save best model
-            best_model_path = os.path.join(
-                config.save_dir, 
-                f'{config.model_type}_model_best.pth'
-            )
-            torch.save(model.state_dict(), best_model_path)
-            
-        else:
-            patience_counter += 1
-            
-            if patience_counter >= config.early_stopping_patience:
-                logger.info(f"\nEarly stopping triggered at epoch {epoch+1}")
-                break
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                best_epoch = epoch + 1
+                patience_counter = 0
+                
+                # Save checkpoint
+                torch.save({
+                    'epoch': epoch,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'val_loss': val_loss,
+                    'config': self.config
+                }, self.experiment_dir / 'best_model.pth')
+                
+            else:
+                patience_counter += 1
+                
+                if patience_counter >= self.config.get('early_stopping_patience', 15):
+                    logger.info(f"\nEarly stopping at epoch {epoch+1}")
+                    break
+        
+        logger.info("="*60)
+        logger.info(f"Training completed!")
+        logger.info(f"Best validation loss: {best_val_loss:.6f} at epoch {best_epoch}")
+        logger.info("="*60)
+        
+        # Load best model
+        checkpoint = torch.load(self.experiment_dir / 'best_model.pth')
+        model.load_state_dict(checkpoint['model_state_dict'])
+        
+        return model, history
     
-    # 8. Load best model and evaluate on test set
-    logger.info("\nEvaluating best model on test set...")
-    model.load_state_dict(torch.load(best_model_path))
-    model.eval()
+    def evaluate(self, model, test_loader, scaler) -> Dict:
+        """Evaluate model on test set"""
+        logger.info("="*60)
+        logger.info("STEP 3: MODEL EVALUATION")
+        logger.info("="*60)
+        
+        model.eval()
+        criterion = nn.MSELoss()
+        
+        all_predictions = []
+        all_targets = []
+        test_loss = 0.0
+        
+        with torch.no_grad():
+            for batch_X, batch_Y in test_loader:
+                batch_X = batch_X.to(self.device)
+                batch_Y = batch_Y.to(self.device)
+                
+                outputs = model(batch_X)
+                loss = criterion(outputs, batch_Y)
+                test_loss += loss.item()
+                
+                all_predictions.extend(outputs.cpu().numpy())
+                all_targets.extend(batch_Y.cpu().numpy())
+        
+        avg_test_loss = test_loss / len(test_loader)
+        
+        # Denormalize predictions
+        predictions = np.array(all_predictions)
+        targets = np.array(all_targets)
+        
+        # Calculate metrics
+        from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+        
+        mae = mean_absolute_error(targets, predictions)
+        mse = mean_squared_error(targets, predictions)
+        rmse = np.sqrt(mse)
+        r2 = r2_score(targets, predictions)
+        mape = np.mean(np.abs((targets - predictions) / (targets + 1e-8))) * 100
+        
+        metrics = {
+            'test_loss': avg_test_loss,
+            'mae': float(mae),
+            'mse': float(mse),
+            'rmse': float(rmse),
+            'r2': float(r2),
+            'mape': float(mape)
+        }
+        
+        logger.info("Test Metrics:")
+        logger.info(f"  MSE Loss: {avg_test_loss:.6f}")
+        logger.info(f"  MAE: {mae:.4f}")
+        logger.info(f"  RMSE: {rmse:.4f}")
+        logger.info(f"  R²: {r2:.4f}")
+        logger.info(f"  MAPE: {mape:.2f}%")
+        
+        return metrics
     
-    test_loss = 0.0
-    with torch.no_grad():
-        for batch_X, batch_Y in test_loader:
-            outputs = model(batch_X)
-            loss = criterion(outputs, batch_Y)
-            test_loss += loss.item()
-    
-    avg_test_loss = test_loss / len(test_loader)
-    logger.info(f"Test Loss: {avg_test_loss:.6f}")
-    
-    # 9. Save final model and scaler
-    final_model_path = os.path.join(config.save_dir, f'{config.model_type}_model.pth')
-    scaler_path = os.path.join(config.save_dir, f'{config.model_type}_scaler.pkl')
-    
-    torch.save(model.state_dict(), final_model_path)
-    joblib.dump(scaler, scaler_path)
-    
-    logger.info(f"\n{'='*60}")
-    logger.info(f"Training completed for {config.model_type.upper()}")
-    logger.info(f"Model saved to: {final_model_path}")
-    logger.info(f"Scaler saved to: {scaler_path}")
-    logger.info(f"Best validation loss: {best_val_loss:.6f}")
-    logger.info(f"Final test loss: {avg_test_loss:.6f}")
-    logger.info(f"{'='*60}\n")
-    
-    return model, scaler, {'train': train_losses, 'val': val_losses, 'test': avg_test_loss}
+    def save_artifacts(self, model, scaler, metrics, history):
+        """Save all training artifacts"""
+        logger.info("="*60)
+        logger.info("STEP 4: SAVING ARTIFACTS")
+        logger.info("="*60)
+        
+        # Save model for production
+        production_dir = Path(f"saved_models/{self.model_type}")
+        production_dir.mkdir(parents=True, exist_ok=True)
+        
+        torch.save(
+            model.state_dict(),
+            production_dir / f'{self.model_type}_model.pth'
+        )
+        
+        joblib.dump(scaler, production_dir / f'{self.model_type}_scaler.pkl')
+        
+        # Save to experiment directory
+        joblib.dump(scaler, self.experiment_dir / 'scaler.pkl')
+        
+        # Save config
+        with open(self.experiment_dir / 'config.json', 'w') as f:
+            json.dump(self.config, f, indent=2)
+        
+        # Save metrics
+        with open(self.experiment_dir / 'metrics.json', 'w') as f:
+            json.dump(metrics, f, indent=2)
+        
+        # Save history
+        with open(self.experiment_dir / 'history.json', 'w') as f:
+            json.dump(history, f, indent=2)
+        
+        logger.info(f"✅ Model saved to: {production_dir}")
+        logger.info(f"✅ Experiment artifacts saved to: {self.experiment_dir}")
 
+
+import pandas as pd
 
 def main():
-    """Main entry point for training"""
-    parser = argparse.ArgumentParser(description='Train SolarSync ML Models')
-    parser.add_argument(
-        '--model',
-        type=str,
-        choices=['solar', 'wind', 'both'],
-        default='both',
-        help='Which model to train'
-    )
-    parser.add_argument(
-        '--epochs',
-        type=int,
-        help='Number of training epochs (overrides default)'
-    )
-    parser.add_argument(
-        '--data-dir',
-        type=str,
-        default='data',
-        help='Directory containing training data'
-    )
+    """Main training pipeline"""
     
-    args = parser.parse_args()
+    # Solar model configuration
+    solar_config = {
+        'model_type': 'solar',
+        'architecture': 'lstm',
+        'data_path': 'data/solar/solar_history.csv',
+        'target_col': 'energy_output',
+        'seq_length': 24,
+        'hidden_size': 128,
+        'num_layers': 3,
+        'dropout': 0.2,
+        'learning_rate': 0.001,
+        'weight_decay': 1e-5,
+        'batch_size': 64,
+        'epochs': 100,
+        'early_stopping_patience': 15
+    }
     
-    logger.info("\n" + "="*60)
-    logger.info("SolarSync ML Training Pipeline")
-    logger.info("="*60 + "\n")
+    # Wind model configuration
+    wind_config = {
+        'model_type': 'wind',
+        'architecture': 'gru',
+        'data_path': 'data/wind/wind_history.csv',
+        'target_col': 'energy_output',
+        'seq_length': 18,
+        'hidden_size': 128,
+        'num_layers': 2,
+        'dropout': 0.2,
+        'learning_rate': 0.002,
+        'weight_decay': 1e-5,
+        'batch_size': 64,
+        'epochs': 80,
+        'early_stopping_patience': 15
+    }
     
-    # Train solar model
-    if args.model in ['solar', 'both']:
-        solar_config = ModelConfig('solar')
-        if args.epochs:
-            solar_config.epochs = args.epochs
-        train_model(solar_config)
-    
-    # Train wind model
-    if args.model in ['wind', 'both']:
-        wind_config = ModelConfig('wind')
-        if args.epochs:
-            wind_config.epochs = args.epochs
-        train_model(wind_config)
-    
-    logger.info("\n" + "="*60)
-    logger.info("All training completed successfully!")
-    logger.info("="*60 + "\n")
+    # Train both models
+    for config in [solar_config, wind_config]:
+        logger.info("\n" + "="*80)
+        logger.info(f"TRAINING {config['model_type'].upper()} MODEL")
+        logger.info("="*80 + "\n")
+        
+        trainer = ModelTrainer(config)
+        
+        # Prepare data
+        train_loader, val_loader, test_loader, scaler, input_size = trainer.prepare_data()
+        
+        # Train model
+        model, history = trainer.train(train_loader, val_loader, input_size)
+        
+        # Evaluate
+        metrics = trainer.evaluate(model, test_loader, scaler)
+        
+        # Save artifacts
+        trainer.save_artifacts(model, scaler, metrics, history)
+        
+        logger.info(f"\n✅ {config['model_type'].upper()} model training complete!\n")
 
 
 if __name__ == '__main__':
