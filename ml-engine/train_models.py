@@ -2,14 +2,14 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
-import pandas as pd
 import os
 import joblib
 import logging
-from datetime import datetime 
+from datetime import datetime
 from pathlib import Path
 import json
 from typing import Dict, Tuple, Optional
+import optuna 
 
 from models import LSTMForecastModel, GRUForecastModel
 from data_loader import load_and_preprocess_data, create_sequences
@@ -18,20 +18,6 @@ from feature_engineering import FeatureEngineer
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-class NumpyEncoder(json.JSONEncoder):
-    """
-    Custom JSON Encoder to handle NumPy data types (like int64, float64, ndarray)
-    by converting them to their native Python equivalents.
-    """
-    def default(self, obj):
-        if isinstance(obj, np.integer):
-            return int(obj)
-        if isinstance(obj, np.floating):
-            return float(obj)
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        return super(NumpyEncoder, self).default(obj)
 
 
 class ModelTrainer:
@@ -51,12 +37,12 @@ class ModelTrainer:
         logger.info(f"Using device: {self.device}")
         logger.info(f"Experiment directory: {self.experiment_dir}")
     
-    def prepare_data(self) -> Tuple[DataLoader, DataLoader, DataLoader, object, int]:
+    def prepare_data(self) -> Tuple[DataLoader, DataLoader, DataLoader, object]:
         """
         Comprehensive data preparation pipeline
         
         Returns:
-            train_loader, val_loader, test_loader, scaler, input_size
+            train_loader, val_loader, test_loader, scaler
         """
         logger.info("="*60)
         logger.info("STEP 1: DATA PREPARATION")
@@ -66,22 +52,30 @@ class ModelTrainer:
         logger.info(f"Loading data from {self.config['data_path']}...")
         raw_data = pd.read_csv(self.config['data_path'])
         logger.info(f"Loaded {len(raw_data)} rows")
-
-        # Ensure timestamp is datetime
-        if 'timestamp' in raw_data.columns:
-            raw_data['timestamp'] = pd.to_datetime(raw_data['timestamp'], errors='coerce')
-            raw_data.dropna(subset=['timestamp'], inplace=True)
-            logger.info("Successfully converted 'timestamp' column to datetime.")
-         
+        
         # 2. Validate and clean data
         logger.info("Validating data quality...")
         validator = DataValidator(self.model_type)
         clean_data, validation_report = validator.validate_dataframe(raw_data)
         
-        # Save validation report - USE CUSTOM ENCODER HERE
+        # Save validation report
+        def convert_to_serializable(obj):
+            """Convert numpy types to native Python types"""
+            if isinstance(obj, np.integer):
+                return int(obj)
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, dict):
+                return {key: convert_to_serializable(value) for key, value in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_to_serializable(item) for item in obj]
+            return obj
+
         with open(self.experiment_dir / 'validation_report.json', 'w') as f:
-            json.dump(validation_report, f, indent=2, cls=NumpyEncoder)
-            
+            json.dump(convert_to_serializable(validation_report), f, indent=2)
+                
         logger.info(f"Data quality score: {validation_report['data_quality_score']:.2%}")
         
         # 3. Feature engineering
@@ -148,21 +142,21 @@ class ModelTrainer:
             train_dataset, 
             batch_size=self.config['batch_size'], 
             shuffle=True,
-            num_workers=0,  # Set to 0 for compatibility
+            num_workers=2,
             pin_memory=True if torch.cuda.is_available() else False
         )
         val_loader = DataLoader(
             val_dataset, 
             batch_size=self.config['batch_size'], 
             shuffle=False,
-            num_workers=0,
+            num_workers=2,
             pin_memory=True if torch.cuda.is_available() else False
         )
         test_loader = DataLoader(
             test_dataset, 
             batch_size=self.config['batch_size'], 
             shuffle=False,
-            num_workers=0,
+            num_workers=2,
             pin_memory=True if torch.cuda.is_available() else False
         )
         
@@ -293,9 +287,9 @@ class ModelTrainer:
             scheduler.step(val_loss)
             
             # Record history
-            history['train_loss'].append(float(train_loss))
-            history['val_loss'].append(float(val_loss))
-            history['learning_rates'].append(float(optimizer.param_groups[0]['lr']))
+            history['train_loss'].append(train_loss)
+            history['val_loss'].append(val_loss)
+            history['learning_rates'].append(optimizer.param_groups[0]['lr'])
             
             # Logging
             if (epoch + 1) % 10 == 0 or epoch == 0:
@@ -316,7 +310,7 @@ class ModelTrainer:
                     'epoch': epoch,
                     'model_state_dict': model.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
-                    'val_loss': float(val_loss),
+                    'val_loss': val_loss,
                     'config': self.config
                 }, self.experiment_dir / 'best_model.pth')
                 
@@ -379,7 +373,7 @@ class ModelTrainer:
         mape = np.mean(np.abs((targets - predictions) / (targets + 1e-8))) * 100
         
         metrics = {
-            'test_loss': float(avg_test_loss),
+            'test_loss': avg_test_loss,
             'mae': float(mae),
             'mse': float(mse),
             'rmse': float(rmse),
@@ -416,21 +410,23 @@ class ModelTrainer:
         # Save to experiment directory
         joblib.dump(scaler, self.experiment_dir / 'scaler.pkl')
         
-        # Save config - USE CUSTOM ENCODER
+        # Save config
         with open(self.experiment_dir / 'config.json', 'w') as f:
-            json.dump(self.config, f, indent=2, cls=NumpyEncoder)
+            json.dump(self.config, f, indent=2)
         
-        # Save metrics - USE CUSTOM ENCODER
+        # Save metrics
         with open(self.experiment_dir / 'metrics.json', 'w') as f:
-            json.dump(metrics, f, indent=2, cls=NumpyEncoder)
+            json.dump(metrics, f, indent=2)
         
-        # Save history - USE CUSTOM ENCODER
+        # Save history
         with open(self.experiment_dir / 'history.json', 'w') as f:
-            json.dump(history, f, indent=2, cls=NumpyEncoder)
+            json.dump(history, f, indent=2)
         
         logger.info(f"✅ Model saved to: {production_dir}")
         logger.info(f"✅ Experiment artifacts saved to: {self.experiment_dir}")
 
+
+import pandas as pd
 
 def main():
     """Main training pipeline"""
@@ -439,7 +435,7 @@ def main():
     solar_config = {
         'model_type': 'solar',
         'architecture': 'lstm',
-        'data_path': 'data/solar/weather_solar_data/nasa_solar_data.csv',
+        'data_path': 'data/solar/merged_solar_data.csv',
         'target_col': 'energy_output',
         'seq_length': 24,
         'hidden_size': 128,
@@ -456,7 +452,7 @@ def main():
     wind_config = {
         'model_type': 'wind',
         'architecture': 'gru',
-        'data_path': 'data/wind/weather_wind_data/openmeteo_historical.csv',
+        'data_path': 'data/wind/merged_wind_data.csv',
         'target_col': 'energy_output',
         'seq_length': 18,
         'hidden_size': 128,

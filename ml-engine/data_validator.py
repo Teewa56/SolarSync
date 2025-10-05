@@ -51,6 +51,7 @@ class DataValidator:
         
         # 1. Check for missing timestamps
         if 'timestamp' in df_clean.columns:
+            df_clean['timestamp'] = pd.to_datetime(df_clean['timestamp'], errors='coerce')
             missing_timestamps = df_clean['timestamp'].isnull().sum()
             if missing_timestamps > 0:
                 report['issues_found'].append(f"Missing timestamps: {missing_timestamps}")
@@ -100,7 +101,7 @@ class DataValidator:
                 report['issues_found'].append(f"{col}: {missing} missing values")
                 
                 # Forward fill then backward fill
-                df_clean[col] = df_clean[col].fillna(method='ffill').fillna(method='bfill')
+                df_clean[col] = df_clean[col].ffill().bfill()
                 
                 # If still missing, use median
                 if df_clean[col].isnull().sum() > 0:
@@ -111,7 +112,7 @@ class DataValidator:
         # 6. Check for monotonic timestamp
         if 'timestamp' in df_clean.columns:
             df_clean = df_clean.sort_values('timestamp')
-            non_monotonic = (df_clean['timestamp'].diff().dt.total_seconds() <= 0).sum()
+            non_monotonic = (df_clean['timestamp'].diff().dt.total_seconds().fillna(1) <= 0).sum()
             if non_monotonic > 0:
                 report['issues_found'].append(f"Non-monotonic timestamps: {non_monotonic}")
         

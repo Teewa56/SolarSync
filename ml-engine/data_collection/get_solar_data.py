@@ -4,9 +4,9 @@ import pandas as pd
 from datetime import datetime, timedelta
 import time
 
-def get_nasa_solar_data(lat, lon, start_date, end_date):
+def get_nasa_solar_data_hourly(lat, lon, start_date, end_date):
     """
-    Get solar data from NASA POWER API
+    Get HOURLY solar data from NASA POWER API
     
     Args:
         lat (float): Latitude
@@ -15,9 +15,10 @@ def get_nasa_solar_data(lat, lon, start_date, end_date):
         end_date (str): End date in YYYYMMDD format
     
     Returns:
-        pandas.DataFrame: Solar data with timestamp and weather parameters
+        pandas.DataFrame: Hourly solar data with timestamp and weather parameters
     """
-    url = "https://power.larc.nasa.gov/api/temporal/daily/point"
+    # Change to hourly endpoint
+    url = "https://power.larc.nasa.gov/api/temporal/hourly/point"
     
     params = {
         'parameters': 'ALLSKY_SFC_SW_DWN,T2M,RH2M,WS10M,PS',
@@ -26,46 +27,90 @@ def get_nasa_solar_data(lat, lon, start_date, end_date):
         'latitude': lat,
         'start': start_date,
         'end': end_date,
-        'format': 'JSON'
+        'format': 'JSON',
+        'time-standard': 'UTC'
     }
     
     try:
-        response = requests.get(url, params=params, timeout=30)
+        print(f"Fetching hourly data from NASA POWER API...")
+        print(f"Location: ({lat}, {lon})")
+        print(f"Date range: {start_date} to {end_date}")
+        
+        response = requests.get(url, params=params, timeout=60)
         response.raise_for_status()
         
         data = response.json()
-        return parse_nasa_solar_data(data)
+        return parse_nasa_hourly_data(data)
         
     except requests.exceptions.RequestException as e:
         print(f"Error fetching NASA data: {e}")
         return None
 
-def parse_nasa_solar_data(nasa_json):
-    """Parse NASA JSON response into DataFrame"""
+def parse_nasa_hourly_data(nasa_json):
+    """Parse NASA JSON response for HOURLY data into DataFrame"""
     parameters = nasa_json['properties']['parameter']
     
-    # Extract dates from any parameter (all should have same dates)
-    dates = list(parameters['ALLSKY_SFC_SW_DWN'].keys())
+    # Extract timestamps - format is YYYYMMDDHH
+    timestamps = list(parameters['ALLSKY_SFC_SW_DWN'].keys())
+    
+    # Parse timestamps: '2020051500' -> '2020-05-15 00:00:00'
+    parsed_timestamps = []
+    for ts in timestamps:
+        year = ts[:4]
+        month = ts[4:6]
+        day = ts[6:8]
+        hour = ts[8:10]
+        parsed_timestamps.append(f"{year}-{month}-{day} {hour}:00:00")
     
     df = pd.DataFrame({
-        'timestamp': pd.to_datetime(dates),
-        'solar_radiation': [parameters['ALLSKY_SFC_SW_DWN'][date] for date in dates],
-        'temperature': [parameters['T2M'][date] for date in dates],
-        'humidity': [parameters['RH2M'][date] for date in dates],
-        'wind_speed': [parameters['WS10M'][date] for date in dates],
-        'pressure': [parameters['PS'][date] for date in dates]
+        'timestamp': pd.to_datetime(parsed_timestamps),
+        'solar_radiation': [parameters['ALLSKY_SFC_SW_DWN'][ts] for ts in timestamps],
+        'temperature': [parameters['T2M'][ts] for ts in timestamps],
+        'humidity': [parameters['RH2M'][ts] for ts in timestamps],
+        'wind_speed': [parameters['WS10M'][ts] for ts in timestamps],
+        'pressure': [parameters['PS'][ts] for ts in timestamps]
     })
+    
+    # Replace -999 (missing values) with NaN
+    df = df.replace(-999, pd.NA)
     
     return df
 
 # Example usage
 if __name__ == "__main__":
-    # Get last 3 years of solar data for New York
-    end_date = datetime.now().strftime('%Y%m%d')
-    start_date = (datetime.now() - timedelta(days=3*365)).strftime('%Y%m%d')
+    # CONFIGURATION - UPDATE THESE
+    LAT = 28.6139   # Your solar plant latitude
+    LON = 77.2090   # Your solar plant longitude
     
-    solar_data = get_nasa_solar_data(40.7128, -74.0060, start_date, end_date)
+    # Date range matching your generation data (May 2020)
+    START_DATE = '20200515'  # May 15, 2020
+    END_DATE = '20200531'    # May 31, 2020
+    
+    OUTPUT_PATH = 'data/solar/weather_solar_data/nasa_solar_hourly_2020.csv'
+    
+    print("="*60)
+    print("NASA POWER Hourly Data Fetcher")
+    print("="*60)
+    
+    solar_data = get_nasa_solar_data_hourly(LAT, LON, START_DATE, END_DATE)
     
     if solar_data is not None:
-        solar_data.to_csv('data/raw/solar/weather_solar_data/nasa_solar_data.csv', index=False)
-        print(f"Saved {len(solar_data)} days of NASA solar data")
+        print(f"\nSuccessfully fetched {len(solar_data)} hourly records")
+        print(f"Date range: {solar_data['timestamp'].min()} to {solar_data['timestamp'].max()}")
+        print(f"\nData preview:")
+        print(solar_data.head())
+        print(f"\nData statistics:")
+        print(solar_data.describe())
+        
+        # Save to CSV
+        import os
+        os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
+        solar_data.to_csv(OUTPUT_PATH, index=False)
+        print(f"\n✓ Saved to: {OUTPUT_PATH}")
+        
+        print("\nNext steps:")
+        print("1. Update data_merger.py with:")
+        print(f"   WEATHER_DATA_PATH = '{OUTPUT_PATH}'")
+        print("2. Run: python data_merger.py")
+    else:
+        print("\n✗ Failed to fetch data")

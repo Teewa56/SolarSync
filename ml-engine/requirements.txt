@@ -5,7 +5,7 @@ scikit-learn
 fastapi
 uvicorn
 matplotlib              # Plotting and visualization
-
+optuna
 redis>=5.0.1                # For caching
 slowapi>=0.1.9             # For rate limiting  
 pytest>=7.4.3              # For testing
