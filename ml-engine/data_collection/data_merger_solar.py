@@ -217,16 +217,16 @@ if __name__ == "__main__":
     
     # CONFIGURATION - UPDATE THESE PATHS
     WEATHER_DATA_PATH = 'data/solar/weather_solar_data/nasa_solar_hourly_2020.csv'
-    GENERATION_DATA_PATH = 'data/solar/plant_generation_data/plant_1_generation_data.csv'  # UPDATE THIS
+    GENERATION_DATA_PATH = 'data/solar/plant_generation_data/plant_1_generation_data.csv'
     OUTPUT_DATA_PATH = 'data/solar/merged_solar_data.csv'
     
     # Column name mapping - UPDATE THESE IF YOUR COLUMNS HAVE DIFFERENT NAMES
     WEATHER_TIME_COL = 'timestamp'  # or 'date', 'datetime', etc.
-    GENERATION_TIME_COL = 'timestamp'  # or 'date', 'datetime', etc.
-    GENERATION_VALUE_COL = 'power'  # or 'generation', 'output', 'AC_POWER', etc.
+    GENERATION_TIME_COL = 'DATE_TIME'  # or 'date', 'datetime', etc.
+    GENERATION_VALUE_COL = 'AC_POWER'  # or 'generation', 'output', 'AC_POWER', etc.
     
     # Time tolerance for matching (how close timestamps need to be)
-    MERGE_TOLERANCE = '1D'  # 1 day
+    MERGE_TOLERANCE = '1H'  # 1 hour
     
     # Create merger and run
     merger = DataMerger(

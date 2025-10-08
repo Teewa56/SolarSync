@@ -56,12 +56,11 @@ def parse_openmeteo_data(meteo_json):
 
 # Example usage  
 if __name__ == "__main__":
-    # Get last 30 days of historical data
-    end_date = datetime.now().strftime('%Y-%m-%d')
-    start_date = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+    start_date = "2020-01-01"
+    end_date = "2020-12-31"
     
     meteo_data = get_openmeteo_historical(40.7128, -74.0060, start_date, end_date)
     
     if meteo_data is not None:
-        meteo_data.to_csv('data/raw/wind/weather_wind_data/openmeteo_historical.csv', index=False)
+        meteo_data.to_csv('data/wind/weather_wind_data/openmeteo_historical_2018.csv', index=False)
         print(f"Saved {len(meteo_data)} hours of Open-Meteo historical data")

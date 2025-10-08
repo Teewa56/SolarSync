@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 
 class DataMerger:
-    """Merge weather data with energy generation data for solar"""
+    """Merge weather data with energy generation data for wind"""
     
     def __init__(self, weather_path: str, generation_path: str, output_path: str):
         self.weather_path = weather_path
@@ -39,109 +39,67 @@ class DataMerger:
         logger.info(f"\nFirst few rows:")
         logger.info(f"\n{self.generation_df.head()}")
     
-    def merge_datasets(self, 
-                       weather_time_col: str = 'timestamp',
-                       generation_time_col: str = 'timestamp',
-                       generation_value_col: str = 'energy_output',
-                       merge_tolerance='1D'):
-        """
-        Merge weather and generation data on timestamp
-        
-        Parameters:
-        -----------
-        weather_time_col : str
-            Name of timestamp column in weather data
-        generation_time_col : str
-            Name of timestamp column in generation data
-        generation_value_col : str
-            Name of energy output column in generation data
-        merge_tolerance : str
-            Time tolerance for merging (e.g., '1H' = 1 hour, '30min' = 30 minutes)
-        """
-        logger.info(f"\n{'='*60}")
-        logger.info("MERGING DATASETS")
-        logger.info(f"{'='*60}")
-        
-        # 1. Parse timestamps
-        logger.info("Parsing timestamps...")
-        self.weather_df[weather_time_col] = pd.to_datetime(
-            self.weather_df[weather_time_col], 
-            errors='coerce'
-        )
-        self.generation_df[generation_time_col] = pd.to_datetime(
-            self.generation_df[generation_time_col], 
-            errors='coerce'
-        )
-        
-        # 2. Sort by timestamp
-        self.weather_df = self.weather_df.sort_values(weather_time_col)
-        self.generation_df = self.generation_df.sort_values(generation_time_col)
-        
-        # 3. Check date ranges
-        logger.info(f"\nWeather data range: {self.weather_df[weather_time_col].min()} to {self.weather_df[weather_time_col].max()}")
-        logger.info(f"Generation data range: {self.generation_df[generation_time_col].min()} to {self.generation_df[generation_time_col].max()}")
-        
-        # 4. Find overlapping period
-        overlap_start = max(
-            self.weather_df[weather_time_col].min(),
-            self.generation_df[generation_time_col].min()
-        )
-        overlap_end = min(
-            self.weather_df[weather_time_col].max(),
-            self.generation_df[generation_time_col].max()
-        )
-        
-        logger.info(f"\nOverlapping period: {overlap_start} to {overlap_end}")
-        
-        # 5. Filter to overlapping period
-        weather_filtered = self.weather_df[
-            (self.weather_df[weather_time_col] >= overlap_start) &
-            (self.weather_df[weather_time_col] <= overlap_end)
-        ].copy()
-        
-        generation_filtered = self.generation_df[
-            (self.generation_df[generation_time_col] >= overlap_start) &
-            (self.generation_df[generation_time_col] <= overlap_end)
-        ].copy()
-        
-        logger.info(f"\nFiltered weather data: {len(weather_filtered)} rows")
-        logger.info(f"Filtered generation data: {len(generation_filtered)} rows")
-        
-        # 6. Prepare generation data for merge (keep only timestamp and energy)
-        generation_for_merge = generation_filtered[[generation_time_col, generation_value_col]].copy()
-        generation_for_merge = generation_for_merge.rename(
-            columns={generation_value_col: 'energy_output'}
-        )
-        
-        # 7. Merge using pd.merge_asof for nearest timestamp matching
-        logger.info(f"\nMerging with tolerance: {merge_tolerance}...")
-        
+    def merge_datasets(self, weather_df, gen_df, weather_time_col, gen_time_col, merge_tolerance="1h"):
+    
+        logger.info("\n============================================================")
+        logger.info("MERGING DATASETS (MATCHING BY MONTH, DAY, TIME — IGNORING YEAR)")
+        logger.info("============================================================")
+
+        # Parse timestamps
+        weather_df[weather_time_col] = pd.to_datetime(weather_df[weather_time_col], errors="coerce")
+        gen_df[gen_time_col] = pd.to_datetime(gen_df[gen_time_col], errors="coerce")
+
+        # Drop any invalid timestamps
+        weather_df = weather_df.dropna(subset=[weather_time_col])
+        gen_df = gen_df.dropna(subset=[gen_time_col])
+
+        # Extract comparable time components
+        for df, name in [(weather_df, "Weather"), (gen_df, "Generation")]:
+            time_col = weather_time_col if name == "Weather" else gen_time_col
+            df["month"] = df[time_col].dt.month
+            df["day"] = df[time_col].dt.day
+            df["hour"] = df[time_col].dt.hour
+            df["minute"] = df[time_col].dt.minute
+
+        logger.info(f"Weather data range (month/day): "
+                    f"{weather_df['month'].min()}/{weather_df['day'].min()} "
+                    f"to {weather_df['month'].max()}/{weather_df['day'].max()}")
+        logger.info(f"Generation data range (month/day): "
+                    f"{gen_df['month'].min()}/{gen_df['day'].min()} "
+                    f"to {gen_df['month'].max()}/{gen_df['day'].max()}")
+
+        # ✅ Create proper datetime merge keys ignoring the year (fixes MergeError)
+        for df in [weather_df, gen_df]:
+            df["merge_key"] = pd.to_datetime({
+                "year": 2000,  # constant dummy year
+                "month": df["month"],
+                "day": df["day"],
+                "hour": df["hour"],
+                "minute": df["minute"]
+            }, errors="coerce")
+
+        # Sort before merging (required for merge_asof)
+        weather_df = weather_df.sort_values("merge_key")
+        gen_df = gen_df.sort_values("merge_key")
+
+        # Merge datasets regardless of year
+        logger.info(f"Merging with tolerance: {merge_tolerance} (ignoring year)...")
         merged_df = pd.merge_asof(
-            weather_filtered,
-            generation_for_merge,
-            left_on=weather_time_col,
-            right_on=generation_time_col,
-            direction='nearest',
-            tolerance=pd.Timedelta(merge_tolerance)
+            gen_df,
+            weather_df,
+            on="merge_key",
+            direction="nearest",
+            tolerance=pd.Timedelta(merge_tolerance.lower())
         )
-        
-        # 8. Remove rows where merge failed (no matching generation data)
+
+        # Drop rows with missing merged values
         before_dropna = len(merged_df)
-        merged_df = merged_df.dropna(subset=['energy_output'])
+        merged_df = merged_df.dropna()
         after_dropna = len(merged_df)
-        
-        logger.info(f"\nMerge complete!")
-        logger.info(f"Rows before removing NaN: {before_dropna}")
-        logger.info(f"Rows after removing NaN: {after_dropna}")
-        logger.info(f"Successfully merged: {after_dropna} rows")
-        logger.info(f"Merge success rate: {(after_dropna/before_dropna)*100:.2f}%")
-        
-        # 9. Rename timestamp column to standard 'timestamp'
-        if weather_time_col != 'timestamp':
-            merged_df = merged_df.rename(columns={weather_time_col: 'timestamp'})
-        
-        self.merged_df = merged_df
-        
+
+        logger.info(f"Merge complete! Rows before dropna: {before_dropna}, after dropna: {after_dropna}")
+        logger.info(f"Successfully merged {(after_dropna / before_dropna * 100) if before_dropna else 0:.2f}% of records.")
+
         return merged_df
     
     def validate_merged_data(self):
@@ -159,7 +117,7 @@ class DataMerger:
             logger.info("✓ No missing values")
         
         # Check energy output range
-        energy_stats = self.merged_df['energy_output'].describe()
+        energy_stats = self.merged_df['LV-ActivePower(kW)'].describe()
         logger.info(f"\nEnergy Output Statistics:")
         logger.info(f"\n{energy_stats}")
         
@@ -167,7 +125,7 @@ class DataMerger:
         if 'solar_radiation' in self.merged_df.columns or 'ALLSKY_SFC_SW_DWN' in self.merged_df.columns:
             solar_col = 'solar_radiation' if 'solar_radiation' in self.merged_df.columns else 'ALLSKY_SFC_SW_DWN'
             daytime = self.merged_df[self.merged_df[solar_col] > 100]
-            zero_energy_daytime = (daytime['energy_output'] <= 0).sum()
+            zero_energy_daytime = (daytime['LV-ActivePower(kW)'] <= 0).sum()
             if zero_energy_daytime > 0:
                 logger.warning(f"⚠ Found {zero_energy_daytime} rows with zero energy during daytime (solar > 100)")
         
@@ -187,8 +145,8 @@ class DataMerger:
     
     def run_full_pipeline(self, 
                           weather_time_col='timestamp',
-                          generation_time_col='timestamp', 
-                          generation_value_col='energy_output',
+                          generation_time_col='Date/Time', 
+                          generation_value_col='LV-ActivePower(kW)',
                           merge_tolerance='1H'):
         """Run the complete merge pipeline"""
         
@@ -197,13 +155,15 @@ class DataMerger:
         
         # Step 2: Merge
         merged_df = self.merge_datasets(
+            weather_df=self.weather_df,
+            gen_df=self.generation_df,
             weather_time_col=weather_time_col,
-            generation_time_col=generation_time_col,
-            generation_value_col=generation_value_col,
+            gen_time_col=generation_time_col,
             merge_tolerance=merge_tolerance
         )
         
         # Step 3: Validate
+        self.merged_df = merged_df
         self.validate_merged_data()
         
         # Step 4: Save
@@ -216,19 +176,19 @@ class DataMerger:
 if __name__ == "__main__":
     
     # CONFIGURATION - UPDATE THESE PATHS
-    WEATHER_DATA_PATH = 'data/wind/weather_wind_data/openmeteo_historical.csv'
-    GENERATION_DATA_PATH = 'data/wind/plant_generation_data/T1.csv'  # UPDATE THIS
+    WEATHER_DATA_PATH = 'data/wind/weather_wind_data/openmeteo_historical_2018.csv'
+    GENERATION_DATA_PATH = 'data/wind/plant_generation_data/T1.csv'
     OUTPUT_DATA_PATH = 'data/wind/merged_wind_data.csv'
     
     # Column name mapping - UPDATE THESE IF YOUR COLUMNS HAVE DIFFERENT NAMES
-    WEATHER_TIME_COL = 'timestamp'  # or 'date', 'datetime', etc.
-    GENERATION_TIME_COL = 'timestamp'  # or 'date', 'datetime', etc.
-    GENERATION_VALUE_COL = 'power'  # or 'generation', 'output', 'AC_POWER', etc.
+    WEATHER_TIME_COL = 'timestamp'
+    GENERATION_TIME_COL = 'Date/Time'
+    GENERATION_VALUE_COL = 'LV-ActivePower(kW)'
     
-    # Time tolerance for matching (how close timestamps need to be)
-    MERGE_TOLERANCE = '1D'  # 1 day
+    # Time tolerance for matching
+    MERGE_TOLERANCE = '1H'
     
-    # Create merger and run
+    # Run pipeline
     merger = DataMerger(
         weather_path=WEATHER_DATA_PATH,
         generation_path=GENERATION_DATA_PATH,
