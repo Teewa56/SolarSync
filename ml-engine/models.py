@@ -49,12 +49,12 @@ class LSTMForecastModel(nn.Module):
         self._init_weights()
 
     def _init_weights(self):
-        """Initialize weights using Xavier initialization"""
-        for name, param in self.named_parameters():
-            if 'weight' in name:
-                nn.init.xavier_uniform_(param)
-            elif 'bias' in name:
-                nn.init.constant_(param, 0.0)
+      for name, param in self.named_parameters():
+          if param.dim() >= 2:  # Only apply Xavier to weights
+              nn.init.xavier_uniform_(param)
+          else:  # 1D tensors (like biases)
+              nn.init.zeros_(param)
+
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -128,12 +128,11 @@ class GRUForecastModel(nn.Module):
         self._init_weights()
 
     def _init_weights(self):
-        """Initialize weights"""
-        for name, param in self.named_parameters():
-            if 'weight' in name:
-                nn.init.xavier_uniform_(param)
-            elif 'bias' in name:
-                nn.init.constant_(param, 0.0)
+      for name, param in self.named_parameters():
+          if param.dim() >= 2:
+              nn.init.xavier_uniform_(param)
+          else:
+              nn.init.zeros_(param)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """

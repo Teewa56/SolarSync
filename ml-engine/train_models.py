@@ -161,8 +161,9 @@ class ModelTrainer:
         )
         
         logger.info(f"Data split: Train={len(train_dataset)}, Val={len(val_dataset)}, Test={len(test_dataset)}")
-        
-        return train_loader, val_loader, test_loader, scaler, len(feature_cols)-1
+        input_size = X.shape[2]
+        return train_loader, val_loader, test_loader, scaler, input_size
+
     
     def build_model(self, input_size: int) -> nn.Module:
         """Build model based on configuration"""
@@ -259,7 +260,7 @@ class ModelTrainer:
             mode='min',
             factor=0.5,
             patience=5,
-            verbose=True
+            threshold=1e-4
         )
         
         # Training history
@@ -453,7 +454,7 @@ def main():
         'model_type': 'wind',
         'architecture': 'gru',
         'data_path': 'data/wind/merged_wind_data.csv',
-        'target_col': 'energy_output',
+        'target_col': 'LV-ActivePower(kW)',
         'seq_length': 18,
         'hidden_size': 128,
         'num_layers': 2,

@@ -1,0 +1,13 @@
+{
+  "original_rows": 19986,
+  "issues_found": [
+    "Duplicate timestamps: 16628",
+    "wind_speed: 2 values out of range [0, 50]",
+    "Irregular time intervals: 22 gaps (expected 3600.0s)"
+  ],
+  "rows_removed": 16628,
+  "values_imputed": 122,
+  "outliers_detected": 122,
+  "final_rows": 3358,
+  "data_quality_score": 0.6668407885519864
+}

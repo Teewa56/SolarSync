@@ -1,0 +1,15 @@
+{
+  "model_type": "wind",
+  "architecture": "gru",
+  "data_path": "data/wind/merged_wind_data.csv",
+  "target_col": "LV-ActivePower(kW)",
+  "seq_length": 18,
+  "hidden_size": 128,
+  "num_layers": 2,
+  "dropout": 0.2,
+  "learning_rate": 0.002,
+  "weight_decay": 1e-05,
+  "batch_size": 64,
+  "epochs": 80,
+  "early_stopping_patience": 15
+}

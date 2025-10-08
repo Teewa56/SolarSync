@@ -1,0 +1,12 @@
+{
+  "original_rows": 393,
+  "issues_found": [
+    "pressure: 393 values out of range [900, 1100]",
+    "Irregular time intervals: 3 gaps (expected 3600.0s)"
+  ],
+  "rows_removed": 0,
+  "values_imputed": 21,
+  "outliers_detected": 21,
+  "final_rows": 393,
+  "data_quality_score": 0.996793893129771
+}
