@@ -8,9 +8,8 @@ import "../src/TradingEngine.sol";
 import "../src/CarbonCredits.sol";
 import "../src/ReputationSystem.sol";
 
-// Note: Replace these placeholder values with actual addresses for the target network (e.g., Sepolia)
-address constant ORACLE_ADDRESS = 0x4a42359424C719602eC90c4228c2535F606A6a17; // Example Chainlink Oracle
-bytes32 constant JOB_ID = 0x76b297b87823432742d4807469735d46777c223c6b291d96b02a99161a007b7b; // Example Job ID
+address constant ORACLE_ADDRESS = 0x5fd83192365fc7a6a4971a280a2a493cd6bb160f; 
+bytes32 constant JOB_ID = 0x76b297b87823432742d4807469735d46777c223c6b291d96b02a99161a007b7b; 
 
 /**
  * @title DeploySolarSync
