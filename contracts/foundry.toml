@@ -1,10 +1,225 @@
-[profile.default]
-src = "src"
-out = "out"
-libs = ["lib"]
+# SolarSync Smart Contract Configuration
+# Foundry - https://getfoundry.sh
 
+[profile.default]
+# Source directory containing Solidity contracts
+src = "src"
+
+# Tests directory
+test = "test"
+
+# Script directory for deployment scripts
+script = "script"
+
+# Output directory for compiled artifacts
+out = "out"
+
+# Cache directory
+cache_path = "cache"
+
+# Solidity version to use
+solc_version = "0.8.19"
+
+# Compiler optimization runs
+optimizer_runs = 200
+
+# Enable optimizer
+optimizer = true
+
+# EVM version (use latest that Hedera/Base supports)
+evm_version = "shanghai"
+
+# Treat warnings as errors
+warnings_as_errors = false
+
+# No console library calls in production code
+no_console = false
+
+# Remappings for dependencies
 remappings = [
-  '@chainlink/contracts/=lib/chainlink-brownie-contracts/contracts/src/',
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "@chainlink/contracts/=lib/chainlink/contracts/",
 ]
 
-# See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
+# Library directories to use for linking
+libs = ["lib"]
+
+# Only compile what's needed
+incremental_compilation = true
+
+# Verbosity for build output
+# 0 = quiet, 1 = normal, 2 = verbose, 3 = debug
+verbosity = 1
+
+[profile.test]
+# Test profile inherits from default
+inherits = "default"
+
+# Verbosity for tests
+verbosity = 2
+
+# EVM version for testing (use london for consistency)
+evm_version = "london"
+
+# Track state changes during tests
+track_state = true
+
+# Revert on test failure
+revert_on_fail = true
+
+[profile.hardhat]
+# Hardhat-compatible profile for maximum compatibility
+inherits = "default"
+
+# Use less optimizer runs for faster compilation
+optimizer_runs = 100
+
+[profile.production]
+# Production profile with strict settings
+inherits = "default"
+
+# Strict optimization for production
+optimizer_runs = 10000
+
+# Treat all warnings as errors in production
+warnings_as_errors = true
+
+# Don't leave console calls in production
+no_console = true
+
+# Enable all optimizer features
+optimizer = true
+
+[build]
+# Delete old artifacts before building
+delete_artifacts_on_build = false
+
+# Skip contracts without source file changes
+skip_unnecessary_builds = true
+
+[test]
+# Test verbosity: quiet, normal, verbose
+verbosity = 2
+
+# EVM version for tests
+evm_version = "shanghai"
+
+# Gas reporting in tests
+gas_reports = ["*"]
+
+# Ignore revert in fuzz tests (set to false for strict testing)
+fuzz_seed = 0x1337
+
+# Number of runs for fuzz tests
+fuzz_runs = 256
+
+# Test timeout in seconds
+test_timeout = 120
+
+[fmt]
+# Line length for formatting
+line_length = 100
+
+# Use tabs for indentation
+use_tabs = false
+
+# Tab width
+tab_width = 4
+
+# Bracket spacing
+bracket_spacing = true
+
+# Multiline function call threshold
+function_attributes_threshold = 3
+
+# Sort imports
+sort_imports = true
+
+# Print function arguments on single line if they fit
+print_function_args_on_separate_lines = false
+
+[rpc_endpoints]
+# Local Anvil development
+anvil = "http://127.0.0.1:8545"
+
+# Hedera testnet (for Hedera deployment)
+hedera_testnet = "https://testnet.hashio.io/api"
+
+# Base testnet (Sepolia)
+base_sepolia = "https://sepolia.base.org"
+
+# Base mainnet
+base_mainnet = "https://mainnet.base.org"
+
+# Ethereum mainnet (for reference)
+mainnet = "https://eth.rpc.blxrbdn.com"
+
+# Ethereum Sepolia testnet
+sepolia = "https://sepolia.infura.io/v3/${INFURA_API_KEY}"
+
+# Polygon testnet
+mumbai = "https://rpc-mumbai.maticvigil.com"
+
+# Polygon mainnet
+polygon = "https://polygon-rpc.com"
+
+[etherscan]
+# Etherscan API keys for different networks
+# Format: network = { key = "YOUR_API_KEY", chain = 1 }
+
+# Base Sepolia (no verification needed, uses default)
+base_sepolia = { key = "", chain = 84532 }
+
+# Base Mainnet
+base_mainnet = { key = "", chain = 8453 }
+
+# Ethereum Sepolia
+sepolia = { key = "${ETHERSCAN_API_KEY}", chain = 11155111 }
+
+# Polygon Mumbai
+mumbai = { key = "${POLYGONSCAN_API_KEY}", chain = 80001 }
+
+# Polygon Mainnet
+polygon = { key = "${POLYGONSCAN_API_KEY}", chain = 137 }
+
+[dependencies]
+# OpenZeppelin Contracts (ERC standards, access control, etc)
+openzeppelin-contracts = "=4.9.3"
+
+# Chainlink for oracle integration
+chainlink = "=0.2.1"
+
+[dependency_versions]
+# Lock specific dependency versions
+# format: path/to/dep = "version"
+
+[environment]
+# Environment variables needed for deployment
+# These can be overridden from command line or .env file
+
+# Network selection
+NETWORK = "anvil"
+
+# Private key for deployment (NEVER hardcode in production)
+PRIVATE_KEY = ""
+
+# Infura API key for Ethereum RPC
+INFURA_API_KEY = ""
+
+# Etherscan API key for contract verification
+ETHERSCAN_API_KEY = ""
+
+# Polygonscan API key for contract verification
+POLYGONSCAN_API_KEY = ""
+
+# Hedera account ID
+HEDERA_ACCOUNT_ID = ""
+
+# Hedera private key
+HEDERA_PRIVATE_KEY = ""
+
+# ML API endpoint
+ML_API_URL = "http://localhost:8000"
+
+# Oracle update interval (in seconds)
+ORACLE_UPDATE_INTERVAL = "3600"
